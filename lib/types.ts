@@ -34,7 +34,8 @@ export const GoogleEmbedConfigSchema = RenderConfigBaseSchema.extend({
   baseHeight: z.number().positive(),
   frame: z.object({
     radiusPx: z.number().min(0).max(24).default(0),
-    backgroundColor: z.string().optional(),
+    borderWidth: z.number().min(0).max(8).default(0),
+    borderColor: z.string().optional().default("#76B900"),
   }),
 });
 

@@ -19,9 +19,9 @@ export function generateEmbedSnippet(config: GoogleEmbedConfig): string {
   // Animation styles based on preset
   const animationStyles = getAnimationStyles(animate.preset);
 
-  // Escape quotes in src and background color
+  // Escape quotes in src
   const escapedSrc = src.replace(/"/g, "&quot;");
-  const bgColor = frame.backgroundColor || "transparent";
+  const borderStyle = frame.borderWidth > 0 ? `border: ${frame.borderWidth}px solid ${frame.borderColor};` : '';
 
   return `<!-- Google Sheets Chart Embed - Responsive & Animated -->
 <div id="${wrapperId}" class="gs-chart-wrapper" style="
@@ -31,7 +31,7 @@ export function generateEmbedSnippet(config: GoogleEmbedConfig): string {
   aspect-ratio: ${aspectRatio};
   overflow: hidden;
   border-radius: ${frame.radiusPx}px;
-  background-color: ${bgColor};
+  ${borderStyle}
   opacity: 0;
   ${animationStyles.initial}
   transition: opacity ${animate.durationMs}ms ease-out, transform ${animate.durationMs}ms ease-out;

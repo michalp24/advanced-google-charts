@@ -108,7 +108,7 @@ export function ChartPreview({ config, className = "" }: ChartPreviewProps) {
       style={{
         aspectRatio: `${aspectRatio}`,
         borderRadius: `${frame.radiusPx}px`,
-        backgroundColor: frame.backgroundColor || "transparent",
+        border: frame.borderWidth > 0 ? `${frame.borderWidth}px solid ${frame.borderColor}` : 'none',
         maxWidth: `${baseWidth}px`,
         transitionDuration: animationDuration,
       }}

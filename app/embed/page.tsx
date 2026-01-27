@@ -66,6 +66,11 @@ function EmbedRenderer({ config }: { config: GoogleEmbedConfig }) {
   const { src, baseWidth, baseHeight, animate, frame } = config;
   const aspectRatio = baseWidth / baseHeight;
   const wrapperId = `gs-chart-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Provide defaults for optional frame properties
+  const borderColor = frame.borderColor || "#76B900";
+  const borderWidth = frame.borderWidth || 0;
+  const borderRadius = frame.radiusPx || 0;
 
   useEffect(() => {
     const wrapper = document.getElementById(wrapperId);
@@ -97,24 +102,34 @@ function EmbedRenderer({ config }: { config: GoogleEmbedConfig }) {
     if (prefersReducedMotion) {
       setIsVisible(true);
     } else {
-      const intersectionObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              setIsVisible(true);
-              intersectionObserver.unobserve(wrapper);
-            }
-          });
-        },
-        { threshold: 0.1 }
-      );
+      // Small delay to ensure element is rendered before checking intersection
+      setTimeout(() => {
+        const intersectionObserver = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                setIsVisible(true);
+                intersectionObserver.unobserve(wrapper);
+              }
+            });
+          },
+          { threshold: 0.1 }
+        );
 
-      intersectionObserver.observe(wrapper);
+        // Check if already in viewport
+        const rect = wrapper.getBoundingClientRect();
+        const isInViewport = rect.top < window.innerHeight && rect.bottom > 0;
+        
+        if (isInViewport) {
+          setIsVisible(true);
+        } else {
+          intersectionObserver.observe(wrapper);
+        }
 
-      return () => {
-        resizeObserver.disconnect();
-        intersectionObserver.disconnect();
-      };
+        return () => {
+          intersectionObserver.disconnect();
+        };
+      }, 100);
     }
 
     return () => {
@@ -147,8 +162,8 @@ function EmbedRenderer({ config }: { config: GoogleEmbedConfig }) {
         className={`relative w-full overflow-hidden transition-all ease-out ${getAnimationStyles()}`}
         style={{
           aspectRatio: `${aspectRatio}`,
-          borderRadius: `${frame.radiusPx}px`,
-          backgroundColor: frame.backgroundColor || "transparent",
+          borderRadius: `${borderRadius}px`,
+          border: borderWidth > 0 ? `${borderWidth}px solid ${borderColor}` : 'none',
           maxWidth: `${baseWidth}px`,
           transitionDuration: `${animate.durationMs}ms`,
         }}

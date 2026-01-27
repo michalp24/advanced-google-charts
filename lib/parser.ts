@@ -41,6 +41,8 @@ export function parseIframeInput(input: string): ParseResult {
         },
         frame: {
           radiusPx: 0,
+          borderWidth: 0,
+          borderColor: "#76B900",
         },
       },
       warnings,
@@ -101,6 +103,8 @@ export function parseIframeInput(input: string): ParseResult {
         },
         frame: {
           radiusPx: 0,
+          borderWidth: 0,
+          borderColor: "#76B900",
         },
       },
       warnings,
