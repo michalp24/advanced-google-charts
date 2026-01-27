@@ -25,10 +25,13 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ChartPreview } from "@/components/chart-preview";
+import { ChartBuilder } from "@/components/chart-builder";
+import { GoogleChartsRenderer } from "@/components/google-charts-renderer";
 import { parseIframeInput } from "@/lib/parser";
-import { GoogleEmbedConfig, AnimationPreset } from "@/lib/types";
-import { generateEmbedSnippet } from "@/lib/snippet-generator";
+import { GoogleEmbedConfig, GoogleChartsConfig, AnimationPreset } from "@/lib/types";
+import { generateEmbedSnippet, generateGoogleChartsSnippet } from "@/lib/snippet-generator";
 import { encodeConfigClient } from "@/lib/encoding";
+import { parseData, fetchGoogleSheetsData, validateChartData, inferDataTypes } from "@/lib/data-utils";
 
 export default function Home() {
   const [iframeInput, setIframeInput] = useState("");
@@ -47,6 +50,13 @@ export default function Home() {
   const [previewKey, setPreviewKey] = useState(0);
   const [googleSheetLink, setGoogleSheetLink] = useState("");
   const [showDataInput, setShowDataInput] = useState(false);
+  
+  // Google Charts state
+  const [chartData, setChartData] = useState<string[][] | null>(null);
+  const [chartConfig, setChartConfig] = useState<GoogleChartsConfig | null>(null);
+  const [dataInputText, setDataInputText] = useState("");
+  const [loadingSheets, setLoadingSheets] = useState(false);
+  const [dataError, setDataError] = useState("");
 
   // Parse iframe input whenever it changes
   useEffect(() => {
@@ -122,6 +132,99 @@ export default function Home() {
     setBorderColor("#76B900");
   };
 
+  // Google Sheets handler
+  const handleFetchSheets = async () => {
+    if (!googleSheetLink.trim()) return;
+    
+    setLoadingSheets(true);
+    setDataError("");
+    
+    const result = await fetchGoogleSheetsData(googleSheetLink);
+    
+    if (result.success && result.data) {
+      const validation = validateChartData(result.data);
+      if (validation.valid) {
+        const typedData = inferDataTypes(result.data);
+        setChartData(typedData);
+      } else {
+        setDataError(validation.error || "Invalid data");
+      }
+    } else {
+      setDataError(result.error || "Failed to fetch data");
+    }
+    
+    setLoadingSheets(false);
+  };
+
+  // Watch for Google Sheet link changes and fetch automatically
+  useEffect(() => {
+    if (googleSheetLink.trim()) {
+      handleFetchSheets();
+    }
+  }, [googleSheetLink]);
+
+  // Data input handler
+  const handleDataInput = () => {
+    if (!dataInputText.trim()) {
+      setDataError("Please paste some data");
+      return;
+    }
+
+    try {
+      const parsed = parseData(dataInputText);
+      const validation = validateChartData(parsed);
+      
+      if (validation.valid) {
+        const typedData = inferDataTypes(parsed);
+        setChartData(typedData);
+        setShowDataInput(false);
+        setDataError("");
+      } else {
+        setDataError(validation.error || "Invalid data format");
+      }
+    } catch (err) {
+      setDataError("Failed to parse data. Please check the format.");
+    }
+  };
+
+  // Chart config handler
+  const handleChartConfigChange = (newConfig: Partial<GoogleChartsConfig>) => {
+    if (chartData) {
+      const fullConfig: GoogleChartsConfig = {
+        mode: "google-charts",
+        chartType: newConfig.chartType || "ColumnChart",
+        dataSource: {
+          type: "manual",
+          data: chartData,
+        },
+        animate: newConfig.animate || {
+          preset: "fade-up",
+          durationMs: 600,
+        },
+        options: newConfig.options || {},
+        frame: newConfig.frame || {
+          radiusPx: 0,
+          borderWidth: 0,
+          borderColor: "#76B900",
+        },
+      };
+      setChartConfig(fullConfig);
+    }
+  };
+
+  // Generate Google Charts snippet
+  useEffect(() => {
+    if (chartConfig) {
+      const snippet = generateGoogleChartsSnippet(chartConfig);
+      setGeneratedSnippet(snippet);
+
+      // For Google Charts, we don't generate embed URLs (for now)
+      setEmbedUrl("");
+      
+      setPreviewKey(prev => prev + 1);
+    }
+  }, [chartConfig]);
+
   const exampleIframe = `<iframe width="600" height="371" seamless frameborder="0" scrolling="no" src="https://docs.google.com/spreadsheets/d/e/2PACX-1vQexample/pubchart?oid=123456789&format=interactive"></iframe>`;
 
   return (
@@ -194,7 +297,7 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        {!iframeInput && !googleSheetLink && !showDataInput ? (
+        {!iframeInput && !chartData && !showDataInput ? (
           // Initial State: Both options side by side
           <div className="flex justify-center pt-8">
             <div className="w-full max-w-6xl">
@@ -288,8 +391,167 @@ export default function Home() {
               </div>
             </div>
           </div>
+        ) : showDataInput && !chartData ? (
+          // Data Input Dialog
+          <div className="flex justify-center pt-12">
+            <Card className="w-full max-w-3xl">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Paste Your Data</CardTitle>
+                    <CardDescription>
+                      Paste data from Excel, Google Sheets, or CSV format
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDataInput(false)}
+                  >
+                    ← Back
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="data-input">Data (with headers)</Label>
+                  <Textarea
+                    id="data-input"
+                    placeholder="Category	Value
+Product A	120
+Product B	85
+Product C	150"
+                    value={dataInputText}
+                    onChange={(e) => setDataInputText(e.target.value)}
+                    className="mt-2 font-mono text-sm min-h-[300px]"
+                    autoFocus
+                  />
+                  <p className="text-xs text-gray-400 mt-2">
+                    Paste tab-separated or comma-separated data. First row should be headers.
+                  </p>
+                </div>
+
+                {dataError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>{dataError}</AlertDescription>
+                  </Alert>
+                )}
+
+                <Button onClick={handleDataInput} className="w-full">
+                  Create Chart
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        ) : chartData ? (
+          // Google Charts Interface
+          <div className="space-y-6">
+            {/* Back Button */}
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setChartData(null);
+                setChartConfig(null);
+                setGoogleSheetLink("");
+                setDataInputText("");
+                setShowDataInput(false);
+              }}
+              className="gap-2"
+            >
+              ← Back to Start
+            </Button>
+
+            {loadingSheets && (
+              <Alert>
+                <AlertTitle>Loading...</AlertTitle>
+                <AlertDescription>
+                  Fetching data from Google Sheets...
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {dataError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{dataError}</AlertDescription>
+              </Alert>
+            )}
+
+            {/* Chart Preview */}
+            {chartConfig && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Chart Preview</CardTitle>
+                  <CardDescription>
+                    Your chart with live data
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="bg-nvidia-gray-medium p-6 rounded-lg border border-nvidia-gray-light flex justify-center">
+                    <GoogleChartsRenderer config={chartConfig} key={previewKey} />
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Grid for Chart Builder and Embed Code */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left: Chart Builder */}
+              <ChartBuilder
+                data={chartData}
+                onConfigChange={handleChartConfigChange}
+                initialConfig={chartConfig || undefined}
+              />
+
+              {/* Right: Generated Snippet */}
+              {generatedSnippet && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Your Embed Code</CardTitle>
+                    <CardDescription>
+                      Copy this code and paste it into your website
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="relative">
+                      <pre className="bg-nvidia-gray-medium p-4 rounded-lg overflow-x-auto text-xs font-mono border border-nvidia-gray-light max-h-[400px] overflow-y-auto">
+                        <code className="text-gray-300">{generatedSnippet}</code>
+                      </pre>
+                      <Button
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={handleCopy}
+                      >
+                        {copied ? (
+                          <>
+                            <Check className="h-4 w-4 mr-2" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-4 w-4 mr-2" />
+                            Copy Code
+                          </>
+                        )}
+                      </Button>
+                    </div>
+
+                    <div className="flex items-start gap-2 text-sm text-gray-400">
+                      <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                      <span>
+                        This code includes the Google Charts library and will work on any HTML website.
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
         ) : (
-          // Full Interface: After paste
+          // Full Interface: After paste (Embed mode)
           <div className="space-y-6">
             {/* Back Button */}
             <Button

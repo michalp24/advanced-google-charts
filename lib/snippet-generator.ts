@@ -1,4 +1,4 @@
-import { GoogleEmbedConfig } from "./types";
+import { GoogleEmbedConfig, GoogleChartsConfig } from "./types";
 
 /**
  * Generate the embed snippet HTML with inline CSS and JS
@@ -107,6 +107,91 @@ export function generateEmbedSnippet(config: GoogleEmbedConfig): string {
     wrapper.style.opacity = '1';
     wrapper.style.transform = 'none';
   }
+})();
+</script>`;
+}
+
+/**
+ * Generate the embed snippet for Google Charts
+ * This snippet is fully self-contained and works on any site
+ */
+export function generateGoogleChartsSnippet(config: GoogleChartsConfig): string {
+  const wrapperId = `gc-chart-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Animation styles based on preset
+  const animationStyles = getAnimationStyles(config.animate.preset);
+  const borderStyle = config.frame.borderWidth > 0 
+    ? `border: ${config.frame.borderWidth}px solid ${config.frame.borderColor};` 
+    : '';
+
+  // Prepare data as JSON string
+  const dataJson = JSON.stringify(config.dataSource.data);
+  const optionsJson = JSON.stringify(config.options);
+
+  return `<!-- Google Charts - Responsive & Animated -->
+<div id="${wrapperId}" class="gc-chart-wrapper" style="
+  position: relative;
+  width: 100%;
+  max-width: ${config.options.width || 800}px;
+  border-radius: ${config.frame.radiusPx}px;
+  ${borderStyle}
+  opacity: 0;
+  ${animationStyles.initial}
+  transition: opacity ${config.animate.durationMs}ms ease-out, transform ${config.animate.durationMs}ms ease-out;
+"></div>
+
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+(function() {
+  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const wrapper = document.getElementById('${wrapperId}');
+  if (!wrapper) return;
+
+  const chartData = ${dataJson};
+  const chartOptions = ${optionsJson};
+
+  // Load Google Charts
+  google.charts.load('current', { packages: ['corechart', 'table'] });
+  google.charts.setOnLoadCallback(drawChart);
+
+  function drawChart() {
+    const data = google.visualization.arrayToDataTable(chartData);
+    
+    // Add animation options
+    chartOptions.animation = {
+      startup: true,
+      duration: ${config.animate.durationMs},
+      easing: 'out'
+    };
+
+    const chart = new google.visualization.${config.chartType}(wrapper);
+    chart.draw(data, chartOptions);
+
+    // Trigger entrance animation
+    if (!prefersReducedMotion) {
+      setTimeout(function() {
+        const observer = new IntersectionObserver(function(entries) {
+          entries.forEach(function(entry) {
+            if (entry.isIntersecting) {
+              wrapper.style.opacity = '1';
+              wrapper.style.transform = 'translateY(0) scale(1)';
+              observer.unobserve(wrapper);
+            }
+          });
+        }, { threshold: 0.1 });
+        
+        observer.observe(wrapper);
+      }, 100);
+    } else {
+      wrapper.style.opacity = '1';
+      wrapper.style.transform = 'none';
+    }
+  }
+
+  // Responsive resize
+  window.addEventListener('resize', function() {
+    google.charts.setOnLoadCallback(drawChart);
+  });
 })();
 </script>`;
 }
