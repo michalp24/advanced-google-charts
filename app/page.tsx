@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Copy, Check, AlertCircle, ExternalLink, Sparkles, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -133,7 +133,7 @@ export default function Home() {
   };
 
   // Google Sheets handler
-  const handleFetchSheets = async () => {
+  const handleFetchSheets = useCallback(async () => {
     if (!googleSheetLink.trim()) return;
     
     setLoadingSheets(true);
@@ -154,14 +154,14 @@ export default function Home() {
     }
     
     setLoadingSheets(false);
-  };
+  }, [googleSheetLink]);
 
   // Watch for Google Sheet link changes and fetch automatically
   useEffect(() => {
     if (googleSheetLink.trim()) {
       handleFetchSheets();
     }
-  }, [googleSheetLink]);
+  }, [googleSheetLink, handleFetchSheets]);
 
   // Data input handler
   const handleDataInput = () => {

@@ -38,8 +38,8 @@ export function ChartBuilder({ data, onConfigChange, initialConfig }: ChartBuild
   );
   const [title, setTitle] = useState(initialConfig?.options?.title || "");
   const [colorPalette, setColorPalette] = useState<keyof typeof colorPalettes>("nvidia");
-  const [legendPosition, setLegendPosition] = useState(
-    initialConfig?.options?.legend?.position || "bottom"
+  const [legendPosition, setLegendPosition] = useState<"bottom" | "top" | "left" | "right" | "none">(
+    (initialConfig?.options?.legend?.position as "bottom" | "top" | "left" | "right" | "none") || "bottom"
   );
   const [animationPreset, setAnimationPreset] = useState<AnimationPreset>(
     initialConfig?.animate?.preset || "fade-up"
@@ -113,11 +113,12 @@ export function ChartBuilder({ data, onConfigChange, initialConfig }: ChartBuild
   };
 
   const handleLegendPositionChange = (value: string) => {
-    setLegendPosition(value);
+    const position = value as "bottom" | "top" | "left" | "right" | "none";
+    setLegendPosition(position);
     updateConfig({
       options: {
         ...initialConfig?.options,
-        legend: { position: value as any },
+        legend: { position },
       },
     });
   };
