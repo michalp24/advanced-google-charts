@@ -156,12 +156,7 @@ export default function Home() {
     setLoadingSheets(false);
   }, [googleSheetLink]);
 
-  // Watch for Google Sheet link changes and fetch automatically
-  useEffect(() => {
-    if (googleSheetLink.trim()) {
-      handleFetchSheets();
-    }
-  }, [googleSheetLink, handleFetchSheets]);
+  // Removed auto-fetch - now triggered by button click only
 
   // Data input handler
   const handleDataInput = () => {
@@ -338,16 +333,48 @@ export default function Home() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="sheet-link">Google Sheet Link</Label>
-                      <Input
-                        id="sheet-link"
-                        type="url"
-                        placeholder="https://docs.google.com/spreadsheets/d/..."
-                        value={googleSheetLink}
-                        onChange={(e) => setGoogleSheetLink(e.target.value)}
-                        className="mt-2"
-                      />
+                      <div className="flex gap-2">
+                        <Input
+                          id="sheet-link"
+                          type="url"
+                          placeholder="https://docs.google.com/spreadsheets/d/..."
+                          value={googleSheetLink}
+                          onChange={(e) => setGoogleSheetLink(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && googleSheetLink.trim()) {
+                              handleFetchSheets();
+                            }
+                          }}
+                        />
+                        <Button
+                          onClick={handleFetchSheets}
+                          disabled={!googleSheetLink.trim() || loadingSheets}
+                          className="flex-shrink-0"
+                        >
+                          {loadingSheets ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                              Loading...
+                            </>
+                          ) : (
+                            <>
+                              <ExternalLink className="h-4 w-4 mr-2" />
+                              Load Data
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-gray-400">
+                        Sheet must be published to the web (File → Share → Publish to web)
+                      </p>
+                      {dataError && googleSheetLink && (
+                        <Alert variant="destructive" className="mt-2">
+                          <AlertCircle className="h-4 w-4" />
+                          <AlertDescription className="text-sm">{dataError}</AlertDescription>
+                        </Alert>
+                      )}
                     </div>
                     
                     <div className="relative">
