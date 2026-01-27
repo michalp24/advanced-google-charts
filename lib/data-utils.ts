@@ -67,32 +67,49 @@ export function parseData(text: string): string[][] {
 
 /**
  * Extract Google Sheets ID from various URL formats
+ * Returns an object with the ID and whether it's a published sheet
  */
-export function extractSheetsId(url: string): string | null {
-  // Match various Google Sheets URL formats
-  const patterns = [
-    /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/,
-    /^([a-zA-Z0-9-_]+)$/, // Just the ID
-  ];
+export function extractSheetsId(url: string): { id: string; isPublished: boolean } | null {
+  // Match published sheets format: /d/e/2PACX-.../
+  const publishedPattern = /\/spreadsheets\/d\/(e\/2PACX-[a-zA-Z0-9-_]+)/;
+  const publishedMatch = url.match(publishedPattern);
+  if (publishedMatch) {
+    return { id: publishedMatch[1], isPublished: true };
+  }
 
-  for (const pattern of patterns) {
-    const match = url.match(pattern);
-    if (match) {
-      return match[1];
-    }
+  // Match regular sheets format: /d/SHEET_ID/
+  const regularPattern = /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+  const regularMatch = url.match(regularPattern);
+  if (regularMatch) {
+    return { id: regularMatch[1], isPublished: false };
+  }
+
+  // Just the ID provided
+  const justIdPattern = /^([a-zA-Z0-9-_]+)$/;
+  const justIdMatch = url.match(justIdPattern);
+  if (justIdMatch) {
+    return { id: justIdMatch[1], isPublished: false };
   }
 
   return null;
 }
 
 /**
- * Get Google Sheets published URL for visualization
+ * Get Google Sheets CSV export URL
  * Note: The sheet must be published to the web for this to work
  */
-export function getSheetsVisualizationUrl(sheetsId: string, gid?: string): string {
+export function getSheetsVisualizationUrl(sheetsId: string, isPublished: boolean, gid?: string): string {
   const baseUrl = 'https://docs.google.com/spreadsheets/d';
-  const gidParam = gid ? `&gid=${gid}` : '';
-  return `${baseUrl}/${sheetsId}/gviz/tq?tqx=out:csv${gidParam}`;
+  
+  if (isPublished) {
+    // For published sheets, use the /pub?output=csv format
+    const gidParam = gid ? `&gid=${gid}` : '';
+    return `${baseUrl}/${sheetsId}/pub?output=csv${gidParam}`;
+  } else {
+    // For regular sheets, use the gviz format
+    const gidParam = gid ? `&gid=${gid}` : '';
+    return `${baseUrl}/${sheetsId}/gviz/tq?tqx=out:csv${gidParam}`;
+  }
 }
 
 /**
@@ -104,9 +121,9 @@ export async function fetchGoogleSheetsData(sheetsUrl: string): Promise<{
   error?: string;
 }> {
   try {
-    const sheetsId = extractSheetsId(sheetsUrl);
+    const sheetsInfo = extractSheetsId(sheetsUrl);
     
-    if (!sheetsId) {
+    if (!sheetsInfo) {
       return {
         success: false,
         error: 'Invalid Google Sheets URL. Please provide a valid spreadsheet URL.',
@@ -117,7 +134,7 @@ export async function fetchGoogleSheetsData(sheetsUrl: string): Promise<{
     const gidMatch = sheetsUrl.match(/[#&]gid=([0-9]+)/);
     const gid = gidMatch ? gidMatch[1] : undefined;
 
-    const csvUrl = getSheetsVisualizationUrl(sheetsId, gid);
+    const csvUrl = getSheetsVisualizationUrl(sheetsInfo.id, sheetsInfo.isPublished, gid);
     
     // Fetch the CSV data
     const response = await fetch(csvUrl);
