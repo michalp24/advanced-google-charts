@@ -1,0 +1,55 @@
+# Advanced Google Charts - Cursor Rules
+
+## Project Overview
+This is a Next.js 15 application that transforms Google Sheets published charts into responsive, animated embeds.
+
+## Tech Stack
+- Next.js 15 (App Router)
+- TypeScript 5.7
+- Tailwind CSS 3.4
+- shadcn/ui components
+- Zod for validation
+- Jest for testing
+
+## Code Style
+- Use TypeScript strict mode
+- Prefer functional components with hooks
+- Use "use client" directive for client components
+- Follow existing naming conventions (camelCase for functions, PascalCase for components)
+- Add JSDoc comments for complex functions
+- Keep functions small and focused
+
+## File Organization
+- `app/` - Next.js routes and pages
+- `components/` - React components
+- `lib/` - Core business logic (non-React)
+- `__tests__/` - Test files
+
+## Key Patterns
+- Use Zod schemas for validation
+- Discriminated unions for renderer types
+- Client-side encoding/decoding for browser
+- Server-side encoding/decoding for Node.js
+
+## Testing
+- Write tests for new features
+- Test edge cases and error conditions
+- Use descriptive test names
+- Run `npm test` before committing
+
+## Architecture
+- V1: Google Embed renderer (current)
+- V2: Pluggable architecture for ECharts renderer (planned)
+- Stateless design (no database in V1)
+- Client-side only (no API routes in V1)
+
+## Common Tasks
+- Add animation preset: Update types.ts, snippet-generator.ts, chart-preview.tsx, page.tsx
+- Add renderer: Create new config schema, implement generator, update union type
+- Fix parsing: Modify lib/parser.ts and add tests
+
+## Documentation
+- Update README.md for user-facing features
+- Update ARCHITECTURE.md for technical changes
+- Update CHANGELOG.md for releases
+- Add inline comments for complex logic

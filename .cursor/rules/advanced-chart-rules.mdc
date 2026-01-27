@@ -1,0 +1,85 @@
+# Cursor Project Rules — Responsive Google Sheets Chart Embedder
+
+## North Star
+Ship V1 as a stateless web app that turns a Google Sheets “published chart” iframe into a responsive + animated embed snippet. Architect V1 so we can add V2 re-rendering via Apache ECharts without refactoring core routes/components.
+
+## Non-negotiables
+- NO cloud storage: no DB, no S3, no persistent backend state.
+- Security-first: never execute user-provided HTML/scripts; sanitize + validate.
+- Output embed snippet must work on plain HTML sites (Webflow/WordPress).
+- Accessibility: respect prefers-reduced-motion; keyboard-friendly UI.
+- Keep code simple, documented, and copy/paste friendly.
+
+## Architecture rules
+- Next.js App Router + TypeScript only.
+- Create a pluggable renderer layer:
+  - `RendererMode = "google-embed" | "echarts"`
+  - `renderers/googleEmbed.ts` must exist in V1
+  - `renderers/echarts.ts` is stubbed (types + TODOs) for V2
+- `/embed` route is the source-of-truth renderer for external embedding:
+  - `/embed?c=<base64url-json>`
+  - decode → validate (Zod) → render via renderer
+- Editor UI page calls the same rendering logic as `/embed` for preview.
+
+## Data + config rules
+- Config is serialized as base64url JSON (no server storage).
+- Provide helpers:
+  - `encodeConfig(config): string`
+  - `decodeConfig(str): config`
+- All config types must be validated with Zod before render.
+
+## Parsing rules (iframe input)
+- Accept:
+  - full `<iframe ...></iframe>` string
+  - or URL-only (warn + request width/height or default to 700x300)
+- Parse using DOMParser on the client; never `dangerouslySetInnerHTML` user input.
+- Extract:
+  - `src` (required)
+  - `width`, `height` (numbers, may be floats)
+- Add warnings for non-docs.google.com hosts but allow.
+
+## Responsive behavior rules
+- We cannot access the iframe DOM (cross-origin), so responsiveness is achieved via scaling:
+  - Wrapper uses `aspect-ratio` from base dimensions.
+  - Inner stage `position:absolute; inset:0; transform-origin:0 0`.
+  - Use `ResizeObserver` to compute scale = min(cw/baseW, ch/baseH).
+  - Apply transform to stage (not to wrapper).
+- Must support multiple embeds on a page:
+  - initializer finds all `.gs-chart` elements and initializes each once.
+
+## Animation rules
+- Animation is applied to the wrapper, triggered by IntersectionObserver.
+- Default preset: Fade Up (opacity + translateY).
+- Must disable/skip animations if `prefers-reduced-motion: reduce`.
+
+## Code quality rules
+- Keep modules small and focused:
+  - `lib/parseIframe.ts`
+  - `lib/embedSnippet.ts`
+  - `lib/config.ts`
+  - `renderers/*`
+- Add comments where logic is non-obvious (encoding, scale math, security).
+- Add minimal tests for parsing + encode/decode.
+
+## Git + workflow rules
+- Cursor must remind me to commit frequently:
+  - After scaffolding
+  - After parsing works
+  - After preview works
+  - After snippet generation works
+  - After /embed route works
+- Conventional commits preferred:
+  - `feat: ...`, `fix: ...`, `chore: ...`, `docs: ...`
+
+## Documentation rules
+- Maintain `/README.md` with:
+  - local dev commands
+  - deployment steps (Vercel)
+  - limitations (no internal chart styling in V1)
+  - V2 plan (ECharts renderer path)
+
+## Out of scope (V1)
+- No OAuth
+- No ECharts rendering (only stub)
+- No style editing beyond wrapper/frame + animation options
+- No server-side scraping of Google content
