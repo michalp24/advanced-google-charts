@@ -371,7 +371,7 @@ export default function Home() {
                         <p>1. Click <strong>File → Share → Publish to web</strong></p>
                         <p>2. Select <strong>Comma-separated values (.csv)</strong></p>
                         <p>3. Click <strong>Publish</strong> and use that CSV URL</p>
-                        <p className="text-nvidia-green">💡 Or share with "Anyone with the link" as Viewer</p>
+                        <p className="text-nvidia-green">💡 Or share with &ldquo;Anyone with the link&rdquo; as Viewer</p>
                       </div>
                       {dataError && googleSheetLink && (
                         <Alert variant="destructive" className="mt-2">
