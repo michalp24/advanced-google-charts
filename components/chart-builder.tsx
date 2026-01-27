@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { GoogleChartType, GoogleChartsConfig, AnimationPreset } from "@/lib/types";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -167,10 +167,11 @@ export function ChartBuilder({ data, onConfigChange, initialConfig }: ChartBuild
     });
   };
 
-  // Initial config emission
-  useState(() => {
+  // Initial config emission on mount
+  useEffect(() => {
     updateConfig({});
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-6">
