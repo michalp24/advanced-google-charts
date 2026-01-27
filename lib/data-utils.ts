@@ -114,6 +114,7 @@ export function getSheetsVisualizationUrl(sheetsId: string, isPublished: boolean
 
 /**
  * Fetch data from a published Google Sheet
+ * Uses server-side API route to bypass CORS restrictions
  */
 export async function fetchGoogleSheetsData(sheetsUrl: string): Promise<{
   success: boolean;
@@ -136,17 +137,27 @@ export async function fetchGoogleSheetsData(sheetsUrl: string): Promise<{
 
     const csvUrl = getSheetsVisualizationUrl(sheetsInfo.id, sheetsInfo.isPublished, gid);
     
-    // Fetch the CSV data
-    const response = await fetch(csvUrl);
+    // Fetch via our API route to bypass CORS
+    const response = await fetch(`/api/fetch-sheets?url=${encodeURIComponent(csvUrl)}`);
     
     if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       return {
         success: false,
-        error: 'Failed to fetch data. Make sure the spreadsheet is published to the web (File > Share > Publish to web).',
+        error: errorData.error || 'Failed to fetch data. Make sure the spreadsheet is published to the web (File > Share > Publish to web).',
       };
     }
 
-    const csvText = await response.text();
+    const result = await response.json();
+    
+    if (!result.success || !result.data) {
+      return {
+        success: false,
+        error: result.error || 'Failed to parse response from server.',
+      };
+    }
+
+    const csvText = result.data;
     const data = parseCSV(csvText);
 
     if (data.length === 0) {
