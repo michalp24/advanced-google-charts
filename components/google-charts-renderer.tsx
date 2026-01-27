@@ -7,6 +7,7 @@ declare global {
   interface Window {
     google: any;
     googleChartsLoaded?: boolean;
+    googleChartsLoading?: Promise<void>;
   }
 }
 
@@ -25,6 +26,7 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
 
   useEffect(() => {
     let mounted = true;
+    let chart: any = null;
 
     const loadAndRenderChart = async () => {
       try {
@@ -32,9 +34,7 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
         setLoading(true);
 
         // Load Google Charts library
-        if (!window.google || !window.googleChartsLoaded) {
-          await loadGoogleCharts();
-        }
+        await loadGoogleCharts();
 
         if (!mounted) return;
 
@@ -42,6 +42,16 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
         const data = config.dataSource.data;
         if (!data || data.length === 0) {
           throw new Error("No data provided");
+        }
+
+        // Wait a bit to ensure Google Charts is fully initialized
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        if (!mounted) return;
+
+        // Clear the container
+        if (chartRef.current) {
+          chartRef.current.innerHTML = '';
         }
 
         // Create DataTable
@@ -58,17 +68,19 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
         };
 
         // Render chart
-        if (chartRef.current) {
+        if (chartRef.current && mounted) {
           const ChartClass = window.google.visualization[config.chartType];
           if (!ChartClass) {
             throw new Error(`Unknown chart type: ${config.chartType}`);
           }
 
-          const chart = new ChartClass(chartRef.current);
+          chart = new ChartClass(chartRef.current);
           chart.draw(dataTable, options);
         }
 
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       } catch (err) {
         if (mounted) {
           setError(err instanceof Error ? err.message : "Failed to render chart");
@@ -81,6 +93,14 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
 
     return () => {
       mounted = false;
+      // Clear chart on unmount
+      if (chart && chart.clearChart) {
+        try {
+          chart.clearChart();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
     };
   }, [config]);
 
@@ -122,19 +142,31 @@ export function GoogleChartsRenderer({ config, className = "" }: GoogleChartsRen
 }
 
 /**
- * Load Google Charts library
+ * Load Google Charts library (singleton pattern to prevent duplicate loads)
  */
 function loadGoogleCharts(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Check if already loaded
+  // If already loaded, return immediately
+  if (window.google && window.googleChartsLoaded) {
+    return Promise.resolve();
+  }
+
+  // If currently loading, return the existing promise
+  if (window.googleChartsLoading) {
+    return window.googleChartsLoading;
+  }
+
+  // Start new load
+  const loadPromise = new Promise<void>((resolve, reject) => {
+    // Double check in case it loaded while we were setting up
     if (window.google && window.googleChartsLoaded) {
       resolve();
       return;
     }
 
     // Check if script is already in the document
-    if (document.getElementById('google-charts-script')) {
-      // Wait for it to load
+    const existingScript = document.getElementById('google-charts-script');
+    if (existingScript) {
+      // Wait for existing script to load
       const checkInterval = setInterval(() => {
         if (window.google && window.googleChartsLoaded) {
           clearInterval(checkInterval);
@@ -158,17 +190,31 @@ function loadGoogleCharts(): Promise<void> {
     script.async = true;
 
     script.onload = () => {
-      window.google.charts.load('current', { packages: ['corechart', 'table'] });
-      window.google.charts.setOnLoadCallback(() => {
-        window.googleChartsLoaded = true;
+      // Only call load() once
+      if (!window.googleChartsLoaded) {
+        window.google.charts.load('current', { 
+          packages: ['corechart', 'table'],
+          callback: () => {
+            window.googleChartsLoaded = true;
+            window.googleChartsLoading = undefined;
+            resolve();
+          }
+        });
+      } else {
         resolve();
-      });
+      }
     };
 
     script.onerror = () => {
+      window.googleChartsLoading = undefined;
       reject(new Error('Failed to load Google Charts library'));
     };
 
     document.head.appendChild(script);
   });
+
+  // Store the promise so other instances can reuse it
+  window.googleChartsLoading = loadPromise;
+  
+  return loadPromise;
 }
