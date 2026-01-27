@@ -23,10 +23,24 @@ export async function GET(request: NextRequest) {
     });
 
     if (!response.ok) {
+      let errorMessage = '';
+      
+      if (response.status === 401 || response.status === 403) {
+        errorMessage = `❌ Permission Denied (${response.status}): Your sheet is NOT publicly accessible.\n\n` +
+          `📝 Try this instead:\n` +
+          `1. Go to File → Share → Publish to web\n` +
+          `2. Choose "Comma-separated values (.csv)"\n` +
+          `3. Click Publish\n` +
+          `4. Copy the CSV URL it gives you (should contain "/pub?output=csv")\n` +
+          `5. Paste that URL here`;
+      } else if (response.status === 404) {
+        errorMessage = `Sheet not found (404). Check that the URL is correct and the sheet exists.`;
+      } else {
+        errorMessage = `Failed to fetch data. Status: ${response.status}`;
+      }
+      
       return NextResponse.json(
-        { 
-          error: `Failed to fetch data from Google Sheets. Status: ${response.status}. Make sure the sheet is published to the web.` 
-        },
+        { error: errorMessage },
         { status: response.status }
       );
     }

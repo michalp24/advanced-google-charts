@@ -366,9 +366,13 @@ export default function Home() {
                           )}
                         </Button>
                       </div>
-                      <p className="text-xs text-gray-400">
-                        Sheet must be published to the web (File → Share → Publish to web)
-                      </p>
+                      <div className="text-xs text-gray-400 space-y-1">
+                        <p className="font-medium">✅ Required: Your sheet must be publicly accessible</p>
+                        <p>1. Click <strong>File → Share → Publish to web</strong></p>
+                        <p>2. Select <strong>Comma-separated values (.csv)</strong></p>
+                        <p>3. Click <strong>Publish</strong> and use that CSV URL</p>
+                        <p className="text-nvidia-green">💡 Or share with "Anyone with the link" as Viewer</p>
+                      </div>
                       {dataError && googleSheetLink && (
                         <Alert variant="destructive" className="mt-2">
                           <AlertCircle className="h-4 w-4" />

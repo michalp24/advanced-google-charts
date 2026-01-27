@@ -69,7 +69,16 @@ export function parseData(text: string): string[][] {
  * Extract Google Sheets ID from various URL formats
  * Returns an object with the ID and whether it's a published sheet
  */
-export function extractSheetsId(url: string): { id: string; isPublished: boolean } | null {
+export function extractSheetsId(url: string): { id: string; isPublished: boolean; directCsv?: boolean } | null {
+  // Check if it's already a direct CSV URL (most reliable)
+  if (url.includes('/pub?output=csv') || url.includes('/export?format=csv')) {
+    const idPattern = /\/spreadsheets\/d\/(e\/2PACX-[a-zA-Z0-9-_]+|[a-zA-Z0-9-_]+)/;
+    const match = url.match(idPattern);
+    if (match) {
+      return { id: match[1], isPublished: true, directCsv: true };
+    }
+  }
+
   // Match published sheets format: /d/e/2PACX-.../
   const publishedPattern = /\/spreadsheets\/d\/(e\/2PACX-[a-zA-Z0-9-_]+)/;
   const publishedMatch = url.match(publishedPattern);
@@ -131,11 +140,16 @@ export async function fetchGoogleSheetsData(sheetsUrl: string): Promise<{
       };
     }
 
-    // Extract gid (sheet ID) if present
-    const gidMatch = sheetsUrl.match(/[#&]gid=([0-9]+)/);
-    const gid = gidMatch ? gidMatch[1] : undefined;
-
-    const csvUrl = getSheetsVisualizationUrl(sheetsInfo.id, sheetsInfo.isPublished, gid);
+    // If it's already a direct CSV URL, use it as-is
+    let csvUrl: string;
+    if (sheetsInfo.directCsv) {
+      csvUrl = sheetsUrl;
+    } else {
+      // Extract gid (sheet ID) if present
+      const gidMatch = sheetsUrl.match(/[#&]gid=([0-9]+)/);
+      const gid = gidMatch ? gidMatch[1] : undefined;
+      csvUrl = getSheetsVisualizationUrl(sheetsInfo.id, sheetsInfo.isPublished, gid);
+    }
     
     // Fetch via our API route to bypass CORS
     const response = await fetch(`/api/fetch-sheets?url=${encodeURIComponent(csvUrl)}`);
