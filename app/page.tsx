@@ -160,6 +160,8 @@ export default function Home() {
 
   // Data input handler
   const handleDataInput = () => {
+    console.log("handleDataInput called, dataInputText:", dataInputText);
+    
     if (!dataInputText.trim()) {
       setDataError("Please paste some data");
       return;
@@ -167,10 +169,15 @@ export default function Home() {
 
     try {
       const parsed = parseData(dataInputText);
+      console.log("Parsed data:", parsed);
+      
       const validation = validateChartData(parsed);
+      console.log("Validation result:", validation);
       
       if (validation.valid) {
         const typedData = inferDataTypes(parsed);
+        console.log("Typed data:", typedData);
+        
         setChartData(typedData);
         setShowDataInput(false);
         setDataError("");
@@ -178,18 +185,23 @@ export default function Home() {
         setDataError(validation.error || "Invalid data format");
       }
     } catch (err) {
-      setDataError("Failed to parse data. Please check the format.");
+      console.error("Parse error:", err);
+      setDataError(`Failed to parse data: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
   // File upload handler
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    console.log("File selected:", file);
+    
     if (!file) return;
 
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
+      console.log("File content:", text);
+      
       if (!text) {
         setDataError("Failed to read file");
         return;
@@ -197,21 +209,28 @@ export default function Home() {
 
       try {
         const parsed = parseData(text);
+        console.log("Parsed file data:", parsed);
+        
         const validation = validateChartData(parsed);
+        console.log("File validation result:", validation);
         
         if (validation.valid) {
           const typedData = inferDataTypes(parsed);
+          console.log("Typed file data:", typedData);
+          
           setChartData(typedData);
           setDataError("");
         } else {
           setDataError(validation.error || "Invalid data format");
         }
       } catch (err) {
-        setDataError("Failed to parse file. Please check the format.");
+        console.error("File parse error:", err);
+        setDataError(`Failed to parse file: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     };
 
     reader.onerror = () => {
+      console.error("File read error");
       setDataError("Failed to read file");
     };
 
@@ -220,6 +239,9 @@ export default function Home() {
 
   // Chart config handler
   const handleChartConfigChange = (newConfig: Partial<GoogleChartsConfig>) => {
+    console.log("handleChartConfigChange called with:", newConfig);
+    console.log("Current chartData:", chartData);
+    
     if (chartData) {
       const fullConfig: GoogleChartsConfig = {
         mode: "google-charts",
@@ -239,7 +261,10 @@ export default function Home() {
           borderColor: "#76B900",
         },
       };
+      console.log("Setting full config:", fullConfig);
       setChartConfig(fullConfig);
+    } else {
+      console.log("No chartData available");
     }
   };
 
@@ -255,6 +280,45 @@ export default function Home() {
       setPreviewKey(prev => prev + 1);
     }
   }, [chartConfig]);
+
+  // Auto-generate initial chart config when data is loaded
+  useEffect(() => {
+    if (chartData && !chartConfig) {
+      console.log("Auto-generating initial config for chartData:", chartData);
+      const initialConfig: GoogleChartsConfig = {
+        mode: "google-charts",
+        chartType: "ColumnChart",
+        dataSource: {
+          type: "manual",
+          data: chartData,
+        },
+        animate: {
+          preset: "fade-up",
+          durationMs: 600,
+        },
+        options: {
+          title: "",
+          width: 800,
+          height: 500,
+          colors: ["#76B900", "#000000", "#1a1a1a", "#2a2a2a"],
+          legend: {
+            position: "bottom",
+          },
+          chartArea: {
+            width: "80%",
+            height: "70%",
+          },
+        },
+        frame: {
+          radiusPx: 0,
+          borderWidth: 0,
+          borderColor: "#76B900",
+        },
+      };
+      console.log("Setting initial config:", initialConfig);
+      setChartConfig(initialConfig);
+    }
+  }, [chartData, chartConfig]);
 
   const exampleIframe = `<iframe width="600" height="371" seamless frameborder="0" scrolling="no" src="https://docs.google.com/spreadsheets/d/e/2PACX-1vQexample/pubchart?oid=123456789&format=interactive"></iframe>`;
 
