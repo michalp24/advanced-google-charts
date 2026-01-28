@@ -182,6 +182,42 @@ export default function Home() {
     }
   };
 
+  // File upload handler
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) {
+        setDataError("Failed to read file");
+        return;
+      }
+
+      try {
+        const parsed = parseData(text);
+        const validation = validateChartData(parsed);
+        
+        if (validation.valid) {
+          const typedData = inferDataTypes(parsed);
+          setChartData(typedData);
+          setDataError("");
+        } else {
+          setDataError(validation.error || "Invalid data format");
+        }
+      } catch (err) {
+        setDataError("Failed to parse file. Please check the format.");
+      }
+    };
+
+    reader.onerror = () => {
+      setDataError("Failed to read file");
+    };
+
+    reader.readAsText(file);
+  };
+
   // Chart config handler
   const handleChartConfigChange = (newConfig: Partial<GoogleChartsConfig>) => {
     if (chartData) {
@@ -407,7 +443,13 @@ export default function Home() {
                         onClick={() => {
                           const input = document.createElement('input');
                           input.type = 'file';
-                          input.accept = '.csv,.xlsx,.xls';
+                          input.accept = '.csv,.txt';
+                          input.onchange = (e: Event) => {
+                            const target = e.target as HTMLInputElement;
+                            if (target.files?.[0]) {
+                              handleFileUpload({ target: { files: target.files } } as any);
+                            }
+                          };
                           input.click();
                         }}
                       >
@@ -488,6 +530,7 @@ Product C	150"
                 setGoogleSheetLink("");
                 setDataInputText("");
                 setShowDataInput(false);
+                setDataError(""); // Clear error
               }}
               className="gap-2"
             >
