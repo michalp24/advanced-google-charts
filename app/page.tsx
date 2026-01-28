@@ -283,8 +283,11 @@ export default function Home() {
 
   // Auto-generate initial chart config when data is loaded
   useEffect(() => {
-    if (chartData && !chartConfig) {
-      console.log("Auto-generating initial config for chartData:", chartData);
+    if (chartData) {
+      console.log("Auto-generating config for chartData:", chartData);
+      console.log("Current chartConfig:", chartConfig);
+      
+      // Always regenerate config when chartData changes
       const initialConfig: GoogleChartsConfig = {
         mode: "google-charts",
         chartType: "ColumnChart",
@@ -318,7 +321,7 @@ export default function Home() {
       console.log("Setting initial config:", initialConfig);
       setChartConfig(initialConfig);
     }
-  }, [chartData, chartConfig]);
+  }, [chartData]); // Only depend on chartData, not chartConfig
 
   const exampleIframe = `<iframe width="600" height="371" seamless frameborder="0" scrolling="no" src="https://docs.google.com/spreadsheets/d/e/2PACX-1vQexample/pubchart?oid=123456789&format=interactive"></iframe>`;
 
@@ -585,6 +588,17 @@ Product C	150"
         ) : chartData ? (
           // Google Charts Interface
           <div className="space-y-6">
+            {/* Debug Panel */}
+            <Alert className="bg-blue-500/10 border-blue-500/50">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Debug Status</AlertTitle>
+              <AlertDescription>
+                <p>Chart Data: {chartData ? `${chartData.length} rows, ${chartData[0]?.length || 0} columns` : 'None'}</p>
+                <p>Chart Config: {chartConfig ? 'Generated' : 'NOT GENERATED'}</p>
+                <p>First Row: {chartData ? JSON.stringify(chartData[0]) : 'N/A'}</p>
+              </AlertDescription>
+            </Alert>
+
             {/* Back Button */}
             <Button
               variant="ghost"
@@ -628,11 +642,30 @@ Product C	150"
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  {/* Debug info */}
+                  <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/50 rounded text-xs">
+                    <p><strong>Debug Info:</strong></p>
+                    <p>Chart Data Rows: {chartData?.length || 0}</p>
+                    <p>Chart Type: {chartConfig.chartType}</p>
+                    <p>Has Config: {chartConfig ? 'Yes' : 'No'}</p>
+                    <p>Preview Key: {previewKey}</p>
+                  </div>
+                  
                   <div className="bg-nvidia-gray-medium p-6 rounded-lg border border-nvidia-gray-light flex justify-center">
                     <GoogleChartsRenderer config={chartConfig} key={previewKey} />
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {!chartConfig && chartData && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Debug: No Chart Config</AlertTitle>
+                <AlertDescription>
+                  Chart data is loaded ({chartData.length} rows) but config is not generated yet.
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* Grid for Chart Builder and Embed Code */}
