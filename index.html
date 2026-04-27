@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chart Builder — NVIDIA</title>
+  <title>NVIDIA Graphs</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Exo+2:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Jost:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -713,6 +713,11 @@
 
     .btn-sm { padding: 5px 11px; font-size: 11.5px; }
     .btn-full { width: 100%; justify-content: center; }
+    .btn:disabled, .btn[disabled] {
+      opacity: .45;
+      cursor: not-allowed;
+      filter: saturate(.4);
+    }
 
     /* ─────────────────────────────────────────────────────
        Chart Preview Area
@@ -926,6 +931,184 @@
       margin: 0 auto;
       padding: 44px 32px 64px;
     }
+
+    /* ─────────────────────────────────────────────────────
+       STACK DIAGRAM VIEW
+    ───────────────────────────────────────────────────── */
+    #view-stack { flex-direction: row; }
+
+    /* Drop zone — large for prominence on the source tab */
+    .stk-drop {
+      border: 2px dashed var(--border);
+      border-radius: var(--r-lg);
+      padding: 26px 16px;
+      text-align: center;
+      background: var(--bg-input);
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .stk-drop:hover, .stk-drop.over {
+      border-color: rgba(118,185,0,.45);
+      background: rgba(118,185,0,.04);
+    }
+    .stk-drop-icon { font-size: 28px; opacity: .55; margin-bottom: 6px; }
+    .stk-drop-title { font-family: var(--font-ui); font-weight: 600; font-size: 13.5px; color: var(--text-hi); margin-bottom: 3px; }
+    .stk-drop-hint { font-size: 12px; color: var(--text-sub); }
+    .stk-drop input { display: none; }
+
+    /* Source preview */
+    .stk-src-preview {
+      width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 6px;
+      margin-top: 10px;
+    }
+
+    /* Status pill below the action button */
+    .stk-status {
+      font-size: 12.5px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      color: var(--text-mid);
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    .stk-status.ok    { color: var(--accent);      border-color: rgba(118,185,0,.35);  background: var(--accent-dim); }
+    .stk-status.err   { color: #ff8a8a;            border-color: rgba(255,80,80,.35);  background: rgba(255,80,80,.08); }
+    .stk-status.busy::after { content: '…'; }
+
+    /* Style references grid */
+    .stk-ref-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .stk-ref-thumb {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px;
+      background: var(--bg-input);
+    }
+    .stk-ref-thumb img {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: 5px;
+      display: block;
+    }
+    .stk-ref-thumb .stk-ref-rm {
+      position: absolute;
+      top: 4px; right: 4px;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: rgba(0,0,0,.6);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stk-ref-thumb .stk-ref-rm:hover { background: rgba(220,40,40,.8); }
+    .stk-ref-name {
+      font-size: 10.5px;
+      color: var(--text-sub);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Color palette (mirrors Chart Builder swatches) */
+    .stk-color-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .stk-color-row input[type="text"] {
+      flex: 1;
+      min-width: 0;
+    }
+    .stk-color-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .stk-color-chip {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      position: relative;
+    }
+    .stk-color-chip::after {
+      content: '×';
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity .12s;
+      text-shadow: 0 1px 2px rgba(0,0,0,.6);
+    }
+    .stk-color-chip:hover::after { opacity: 1; }
+
+    /* Stack canvas / preview area */
+    .stk-canvas {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: var(--bg);
+      position: relative;
+    }
+    .stk-result-wrap {
+      width: 100%;
+      max-width: 1280px;
+      aspect-ratio: 16 / 9;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .stk-result-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .stk-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+      color: var(--text-sub);
+      padding: 40px;
+    }
+    .stk-empty .stk-empty-icon { font-size: 52px; opacity: .25; line-height: 1; }
+    .stk-empty .stk-empty-title { font-family: var(--font-ui); font-weight: 700; font-size: 18px; color: var(--text-mid); }
+    .stk-empty .stk-empty-desc { font-size: 13px; max-width: 420px; line-height: 1.55; }
 
     .deps-hero {
       margin-bottom: 44px;
@@ -1296,7 +1479,7 @@
 <nav class="nav">
   <a class="nav-brand" href="#">
     <div class="nav-logo">N</div>
-    <span class="nav-wordmark">NVIDIA <span>Chart Builder</span></span>
+    <span class="nav-wordmark">NVIDIA <span>Graphs</span></span>
   </a>
 
   <div class="nav-right">
@@ -1329,7 +1512,7 @@
                 <rect x="11" y="1" width="3" height="14" rx="0.5"/>
               </svg>
             </span>
-            <div class="nv-vertical-nav-text">Builder</div>
+            <div class="nv-vertical-nav-text">Chart Builder</div>
             <span class="nv-vertical-nav-icon vnav-chevron">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width="12" height="12">
                 <path d="M8 10.5L2.5 5h11L8 10.5z"/>
@@ -1366,18 +1549,17 @@
           </div>
         </li>
 
-        <!-- Export -->
+        <!-- Stack Diagram -->
         <li>
-          <a href="#" class="nv-vertical-nav-link" data-view="export"
-             onclick="switchView('export');return false;">
+          <a href="#" class="nv-vertical-nav-link" data-view="stack"
+             onclick="switchView('stack');return false;">
             <span class="nv-vertical-nav-icon">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width="16" height="16">
-                <path d="M8 1v8.5M5.5 7L8 9.5 10.5 7"/>
-                <path d="M8 1v8.5M5.5 7L8 9.5 10.5 7" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M2 12h12v2H2v-2z"/>
+                <path d="M8 1L1 4.5 8 8l7-3.5L8 1zM1 8l7 3.5L15 8M1 11.5L8 15l7-3.5"/>
+                <path d="M8 1L1 4.5 8 8l7-3.5L8 1zM1 8l7 3.5L15 8M1 11.5L8 15l7-3.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
               </svg>
             </span>
-            <div class="nv-vertical-nav-text">Export</div>
+            <div class="nv-vertical-nav-text">Stack Diagram</div>
           </a>
         </li>
 
@@ -1684,9 +1866,9 @@
     <div class="chart-area">
       <div class="chart-bar">
         <span class="chart-bar-title" id="bar-title">Chart Preview</span>
-        <button class="btn btn-outline btn-sm" onclick="loadSample()">Try sample data</button>
-        <button class="btn btn-outline btn-sm" onclick="startOver()" style="color:#e05050;border-color:#5a2020">↺ Start Over</button>
-        <button class="btn btn-green btn-sm" onclick="switchView('export')">Export →</button>
+        <button class="btn btn-outline" onclick="loadSample()">Try sample data</button>
+        <button class="btn btn-outline" onclick="startOver()" style="color:#e05050;border-color:#5a2020">↺ Start Over</button>
+        <button class="btn btn-green" onclick="switchView('export')">Export →</button>
       </div>
 
       <div class="chart-canvas">
@@ -1760,6 +1942,98 @@
     </div>
 
   </div><!-- /view-export -->
+
+
+  <!-- ─────────────────────────────────────────────────
+       STACK DIAGRAM VIEW
+       Drop a stack diagram image, GPT vision extracts structure,
+       gpt-image-1 regenerates a polished version with optional
+       saved style references and a brand color palette.
+  ───────────────────────────────────────────────────── -->
+  <div class="view" id="view-stack">
+
+    <!-- Sidebar: Source / Style tabs -->
+    <aside class="sidebar">
+      <div class="sidebar-tabs">
+        <button class="stab active" onclick="switchStackPanel('source', this)">Source</button>
+        <button class="stab"        onclick="switchStackPanel('style',  this)">Style</button>
+      </div>
+
+      <!-- SOURCE PANEL -->
+      <div class="spanel active" id="stk-panel-source">
+        <div class="fld">
+          <label class="lbl">Stack Diagram</label>
+          <label class="stk-drop" id="stk-drop">
+            <div class="stk-drop-icon">📥</div>
+            <div class="stk-drop-title">Drop a diagram image, or click to choose</div>
+            <div class="stk-drop-hint">PNG · JPG · WebP — up to 4 MB</div>
+            <input type="file" id="stk-file" accept="image/png,image/jpeg,image/webp" onchange="onStackFile(event)">
+          </label>
+          <img id="stk-source-preview" class="stk-src-preview" style="display:none" alt="Source diagram preview">
+        </div>
+
+        <div class="fld">
+          <label class="lbl" for="stk-prompt">Custom Prompt <span style="font-weight:400;color:var(--text-sub);text-transform:none;letter-spacing:0">(optional)</span></label>
+          <textarea class="ipt" id="stk-prompt" rows="4"
+                    placeholder="e.g. tighter spacing, darker headers, emphasize the platform layers…"></textarea>
+          <div class="hint">Source text, boxes, hierarchy, and stack direction are always preserved. No icons or fake group labels are added.</div>
+        </div>
+
+        <button class="btn btn-green btn-full" id="stk-generate" onclick="restyleStackDiagram()">
+          ✦ Recreate Diagram
+        </button>
+        <div class="stk-status" id="stk-status">Ready. Drop a stack diagram to begin.</div>
+      </div>
+
+      <!-- STYLE PANEL -->
+      <div class="spanel" id="stk-panel-style">
+        <div class="fld">
+          <label class="lbl">Reference Diagrams</label>
+          <label class="stk-drop">
+            <div class="stk-drop-icon">🖼️</div>
+            <div class="stk-drop-title">Add reference images</div>
+            <div class="stk-drop-hint">Up to 6 — saved in your browser</div>
+            <input type="file" id="stk-ref-file" accept="image/png,image/jpeg,image/webp" multiple onchange="onStackRefAdd(event)">
+          </label>
+          <div class="stk-ref-list" id="stk-ref-list"></div>
+        </div>
+
+        <div class="sep"></div>
+
+        <div class="fld">
+          <label class="lbl">Brand Colors</label>
+          <div class="stk-color-row">
+            <input class="ipt" id="stk-color-input" type="text" placeholder="#76b900" maxlength="7">
+            <button class="btn btn-outline btn-sm" onclick="onStackColorAdd()">Add</button>
+          </div>
+          <div class="stk-color-list" id="stk-color-list"></div>
+          <div class="hint" style="margin-top:8px">Hex colors only. Click a swatch to remove it.</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right: preview + actions -->
+    <div class="chart-area">
+      <div class="chart-bar">
+        <span class="chart-bar-title" id="stk-bar-title">Stack Diagram Preview</span>
+        <button class="btn btn-outline" onclick="clearStackResult()">↺ Reset</button>
+        <button class="btn btn-outline" id="stk-export-jpg" onclick="exportStackJPG()" disabled>⬇ JPG 1920×1080</button>
+        <button class="btn btn-green"   id="stk-export-svg" onclick="exportStackSVG()" disabled>⬇ SVG 1920×1080</button>
+      </div>
+
+      <div class="stk-canvas">
+        <div class="stk-empty" id="stk-empty">
+          <div class="stk-empty-icon">📊</div>
+          <div class="stk-empty-title">No diagram yet</div>
+          <div class="stk-empty-desc">Drop a stack diagram on the left, optionally add style references and brand colors, then click <strong>Recreate Diagram</strong>.</div>
+        </div>
+        <div class="stk-result-wrap" id="stk-result-wrap" style="display:none">
+          <img id="stk-result-img" alt="Restyled stack diagram">
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /view-stack -->
 
 
   <!-- ─────────────────────────────────────────────────
@@ -1951,8 +2225,8 @@ function switchBuilderPanel(name) {
   document.querySelectorAll('.nv-vertical-nav-sub-link[data-panel]').forEach(t => t.removeAttribute('aria-current'));
   const sub = document.querySelector('.nv-vertical-nav-sub-link[data-panel="' + name + '"]');
   if (sub) sub.setAttribute('aria-current', 'page');
-  // Switch panel
-  document.querySelectorAll('.spanel').forEach(p => p.classList.remove('active'));
+  // Switch panel (scoped to the builder view so other views' spanels keep their state)
+  document.querySelectorAll('#view-builder .spanel').forEach(p => p.classList.remove('active'));
   document.getElementById('spanel-' + name).classList.add('active');
   // Toggle show-style class for data-first layout
   const builder = document.getElementById('view-builder');
@@ -2661,7 +2935,7 @@ function buildEmbedCode() {
     ? `\n<div style="font-family:sans-serif;font-size:${titleSize}px;color:${titleColor};text-align:${titleAlign};padding:0 0 8px 0;">${esc(title)}</div>`
     : '';
 
-  return `<!-- Google Chart Embed — generated by NVIDIA Chart Builder -->
+  return `<!-- Google Chart Embed — generated by NVIDIA Graphs -->
 <div style="display:inline-flex;flex-direction:column;width:${w}px;">${titleHtml}
   <div id="chart_div" style="width:${w}px;height:${h}px;"></div>
 </div>
@@ -3003,6 +3277,248 @@ window.addEventListener('resize', () => {
 // Apply capability-based visibility immediately on script load so the initial paint
 // reflects the current chartType (don't wait for the Google Charts callback).
 updateChartStates();
+
+
+/* ════════════════════════════════════════════════════════════
+   STACK DIAGRAM — drop image, GPT-vision extracts structure,
+   gpt-image-1 regenerates a polished version, exports as
+   PNG-backed SVG / JPG at 1920×1080.
+   API endpoint: /api/restyle (Vercel serverless function).
+═══════════════════════════════════════════════════════════════ */
+
+const STK_LS_REFS    = 'nvidia-graphs-stack-refs-v1';
+const STK_LS_COLORS  = 'nvidia-graphs-stack-colors-v1';
+const STK_OUT_W      = 1920;
+const STK_OUT_H      = 1080;
+const STK_MAX_REFS   = 6;
+const STK_MAX_BYTES  = 4 * 1024 * 1024;   // 4 MB — comfortably under Vercel function body limit
+
+let stkSourceDataUrl = null;
+let stkSourceName    = null;
+let stkResultDataUrl = null;
+
+const $$ = id => document.getElementById(id);
+
+function stkGetRefs()   { try { return JSON.parse(localStorage.getItem(STK_LS_REFS)   || '[]'); } catch { return []; } }
+function stkSetRefs(v)  { localStorage.setItem(STK_LS_REFS,   JSON.stringify(v.slice(-STK_MAX_REFS))); renderStackRefs(); }
+function stkGetColors() { try { return JSON.parse(localStorage.getItem(STK_LS_COLORS) || '[]'); } catch { return []; } }
+function stkSetColors(v){ localStorage.setItem(STK_LS_COLORS, JSON.stringify(v)); renderStackColors(); }
+
+function stkSetStatus(msg, kind) {
+  const el = $$('stk-status');
+  el.textContent = msg;
+  el.className = 'stk-status' + (kind ? ' ' + kind : '');
+}
+
+function stkReadFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+function switchStackPanel(name, btn) {
+  document.querySelectorAll('#view-stack .stab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  $$('stk-panel-source').classList.toggle('active', name === 'source');
+  $$('stk-panel-style' ).classList.toggle('active', name === 'style');
+}
+
+async function onStackFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (file.size > STK_MAX_BYTES) {
+    stkSetStatus(`File too large (${(file.size/1024/1024).toFixed(1)} MB). Max is 4 MB.`, 'err');
+    e.target.value = '';
+    return;
+  }
+  stkSourceDataUrl = await stkReadFileAsDataUrl(file);
+  stkSourceName    = file.name;
+  const img = $$('stk-source-preview');
+  img.src = stkSourceDataUrl;
+  img.style.display = 'block';
+  stkSetStatus('Source loaded: ' + file.name, 'ok');
+}
+
+async function onStackRefAdd(e) {
+  const files = Array.from(e.target.files || []);
+  const refs = stkGetRefs();
+  for (const file of files) {
+    if (file.size > STK_MAX_BYTES) continue;
+    refs.push({ name: file.name, dataUrl: await stkReadFileAsDataUrl(file), addedAt: Date.now() });
+  }
+  stkSetRefs(refs);
+  e.target.value = '';
+}
+
+function renderStackRefs() {
+  const wrap = $$('stk-ref-list');
+  const refs = stkGetRefs();
+  wrap.innerHTML = '';
+  if (!refs.length) {
+    wrap.innerHTML = '<div class="hint" style="grid-column:1/-1">No reference diagrams yet.</div>';
+    return;
+  }
+  refs.forEach((r, i) => {
+    const div = document.createElement('div');
+    div.className = 'stk-ref-thumb';
+    div.innerHTML = '<button class="stk-ref-rm" type="button" title="Remove">×</button><img alt=""><div class="stk-ref-name"></div>';
+    div.querySelector('img').src = r.dataUrl;
+    div.querySelector('.stk-ref-name').textContent = r.name || ('reference-' + (i + 1));
+    div.querySelector('.stk-ref-rm').onclick = ev => {
+      ev.preventDefault();
+      stkSetRefs(refs.filter((_, idx) => idx !== i));
+    };
+    wrap.appendChild(div);
+  });
+}
+
+function onStackColorAdd() {
+  const inp = $$('stk-color-input');
+  const v = (inp.value || '').trim();
+  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+    stkSetStatus('Enter a hex color like #76b900', 'err');
+    return;
+  }
+  stkSetColors([...stkGetColors(), v]);
+  inp.value = '';
+}
+
+function renderStackColors() {
+  const wrap = $$('stk-color-list');
+  const colors = stkGetColors();
+  wrap.innerHTML = '';
+  if (!colors.length) {
+    wrap.innerHTML = '<div class="hint">No brand colors added yet.</div>';
+    return;
+  }
+  colors.forEach((c, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'stk-color-chip';
+    chip.style.background = c;
+    chip.title = 'Remove ' + c;
+    chip.onclick = () => stkSetColors(colors.filter((_, idx) => idx !== i));
+    wrap.appendChild(chip);
+  });
+}
+
+async function restyleStackDiagram() {
+  if (!stkSourceDataUrl) { stkSetStatus('Drop a source diagram first.', 'err'); return; }
+  const btn = $$('stk-generate');
+  btn.disabled = true;
+  stkSetStatus('Analyzing source diagram, applying saved style, generating output', 'busy');
+  try {
+    const body = {
+      diagramDataUrl: stkSourceDataUrl,
+      diagramName:    stkSourceName,
+      styleImages:    stkGetRefs(),
+      palette:        stkGetColors(),
+      customPrompt:   $$('stk-prompt').value || '',
+    };
+    const r = await fetch('/api/restyle', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+    stkResultDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
+    $$('stk-result-img').src = stkResultDataUrl;
+    $$('stk-result-wrap').style.display = '';
+    $$('stk-empty').style.display = 'none';
+    $$('stk-export-jpg').disabled = false;
+    $$('stk-export-svg').disabled = false;
+    stkSetStatus('Done. Export is locked to 1920×1080.', 'ok');
+  } catch (err) {
+    stkSetStatus(err.message || String(err), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function clearStackResult() {
+  stkResultDataUrl = null;
+  stkSourceDataUrl = null;
+  stkSourceName = null;
+  $$('stk-result-img').src = '';
+  $$('stk-result-wrap').style.display = 'none';
+  $$('stk-empty').style.display = '';
+  $$('stk-export-jpg').disabled = true;
+  $$('stk-export-svg').disabled = true;
+  $$('stk-source-preview').style.display = 'none';
+  $$('stk-source-preview').src = '';
+  $$('stk-file').value = '';
+  $$('stk-prompt').value = '';
+  stkSetStatus('Ready. Drop a stack diagram to begin.');
+}
+
+function stkImageToCanvas(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = STK_OUT_W; c.height = STK_OUT_H;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, STK_OUT_W, STK_OUT_H);
+      const scale = Math.min(STK_OUT_W / img.width, STK_OUT_H / img.height);
+      const w = img.width * scale, h = img.height * scale;
+      ctx.drawImage(img, (STK_OUT_W - w) / 2, (STK_OUT_H - h) / 2, w, h);
+      resolve(c);
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function stkDownloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function exportStackJPG() {
+  if (!stkResultDataUrl) return;
+  const c = await stkImageToCanvas(stkResultDataUrl);
+  c.toBlob(b => stkDownloadBlob(b, 'stack-diagram-1920x1080.jpg'), 'image/jpeg', 0.96);
+}
+
+function exportStackSVG() {
+  if (!stkResultDataUrl) return;
+  // PNG-backed SVG (gpt-image-1 returns raster). Editable as an image, not as vector primitives.
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <image href="${stkResultDataUrl}" x="0" y="0" width="${STK_OUT_W}" height="${STK_OUT_H}" preserveAspectRatio="xMidYMid meet"/>
+</svg>`;
+  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-1920x1080.svg');
+}
+
+/* Drag-and-drop on the source drop zone */
+(() => {
+  const dz = $$('stk-drop');
+  if (!dz) return;
+  ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); dz.classList.add('over');
+  }));
+  ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault(); if (ev === 'dragleave' && e.target !== dz) return;
+    dz.classList.remove('over');
+  }));
+  dz.addEventListener('drop', async e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    $$('stk-file').files = e.dataTransfer.files;
+    onStackFile({ target: { files: [f], value: '' } });
+  });
+})();
+
+// Initial render of persisted refs + colors so the Style panel is populated on load.
+renderStackRefs();
+renderStackColors();
 </script>
 
 </body>
