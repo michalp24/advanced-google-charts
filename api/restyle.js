@@ -5,7 +5,7 @@ import { File } from "node:buffer";
 // alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
 export const config = { maxDuration: 300 };
 
-const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
+const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.3";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 
 function extForMime(mime) {
