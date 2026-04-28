@@ -5,7 +5,7 @@ import { File } from "node:buffer";
 // alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
 export const config = { maxDuration: 300 };
 
-const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-4o";
+const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 
 function extForMime(mime) {
@@ -57,11 +57,16 @@ function buildPrompt({ structure, palette, customPrompt }) {
   return `Redesign the source stack/architecture diagram into a premium, high-quality presentation graphic.
 
 Canvas and composition:
-- Create a 16:9 landscape diagram designed for 1920x1080 output.
-- Fill the canvas similarly to the original source. Do not leave large empty margins.
-- Keep the same general composition, stack direction, groups, hierarchy, and relative layout from the source.
+- Render exactly at 1920x1080 (16:9 landscape).
+- The diagram must fill the entire canvas edge-to-edge. Margins must be no larger than 3% on any side. Do NOT leave wide empty bands on the left, right, top, or bottom.
+- Scale boxes, columns, and layers up so that the stack stretches across the full 1920px width. Avoid letterboxing or pillarboxing of any kind.
+- Keep the same composition, stack direction, groups, hierarchy, and relative layout from the source.
 - Improve visual polish: clean typography, rounded cards, subtle shadows, aligned spacing, modern enterprise product UI styling.
 - ${colors}
+
+Color theme — IMPORTANT:
+- Match the source's overall lightness. If the source has a light/white background, render on a light/white background. If the source has a dark background, render dark. Never flip the theme.
+- Use the saved reference images only as a style cue (typography weight, card shape, shadow style, spacing) — do NOT copy their background color, lightness, or palette unless they match the source.
 
 Strict content rules:
 - Do not add any new text.
