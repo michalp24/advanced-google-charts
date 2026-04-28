@@ -5,7 +5,10 @@ import { File } from "node:buffer";
 // alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
 export const config = { maxDuration: 300 };
 
-const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.3";
+// gpt-4o is the safe default for vision + JSON extraction. To try a GPT-5
+// family model, set OPENAI_TEXT_MODEL on the Vercel project (e.g. gpt-5,
+// gpt-5.3) — keeping the env-var override avoids redeploying.
+const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-4o";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 
 function extForMime(mime) {
@@ -52,30 +55,25 @@ Use normalized coordinates 0-100. Preserve exact source text only. Do not create
 
 function buildPrompt({ structure, palette, customPrompt }) {
   const colors = palette.length
-    ? `Use these provided colors as the diagram palette: ${palette.join(", ")}.`
-    : "Use the saved reference image style and restrained modern presentation colors.";
-  return `Redesign the source stack/architecture diagram into a premium, high-quality presentation graphic.
+    ? `Use these colors as the diagram palette: ${palette.join(", ")}.`
+    : "Use restrained modern presentation colors.";
+  return `Redesign the source stack/architecture diagram into a premium, high-quality presentation graphic at 16:9 landscape.
 
-Canvas and composition:
-- Render exactly at 1920x1080 (16:9 landscape).
-- The diagram must fill the entire canvas edge-to-edge. Margins must be no larger than 3% on any side. Do NOT leave wide empty bands on the left, right, top, or bottom.
-- Scale boxes, columns, and layers up so that the stack stretches across the full 1920px width. Avoid letterboxing or pillarboxing of any kind.
+Composition:
+- Fill the canvas. Stretch boxes and columns to use the full width; keep margins small (a thin breathing room is fine, but no wide empty bands on the left, right, top, or bottom).
 - Keep the same composition, stack direction, groups, hierarchy, and relative layout from the source.
-- Improve visual polish: clean typography, rounded cards, subtle shadows, aligned spacing, modern enterprise product UI styling.
+- Apply clean typography, rounded cards, subtle shadows, aligned spacing — modern enterprise product UI styling.
 - ${colors}
 
-Color theme — IMPORTANT:
-- Match the source's overall lightness. If the source has a light/white background, render on a light/white background. If the source has a dark background, render dark. Never flip the theme.
-- Use the saved reference images only as a style cue (typography weight, card shape, shadow style, spacing) — do NOT copy their background color, lightness, or palette unless they match the source.
+Theme:
+- Match the source's lightness. If the source background is light/white, render light. If the source background is dark, render dark. Do not flip the theme.
+- Use any provided reference images for typography weight, card shape, shadow, and spacing cues only — don't copy their background or palette unless they already match the source.
 
-Strict content rules:
-- Do not add any new text.
-- Do not add icons.
-- Do not add generic labels like Group 1, Group 2, Group 3, Section 1, etc.
-- Do not add logos, captions, footnotes, badges, explanatory text, or watermarks.
-- Preserve source text as closely and exactly as possible.
+Content rules:
+- Do not add any new text, icons, logos, captions, footnotes, badges, watermarks, or explanatory text.
+- Do not add generic labels like Group 1, Group 2, Section 1, etc.
+- Preserve the source text as closely as possible. If a label is unclear, omit it rather than invent it.
 - Preserve the source boxes, groups, hierarchy, and stack structure.
-- If text is unclear, omit it rather than inventing it.
 
 Extracted source structure to preserve:
 ${JSON.stringify(structure, null, 2)}
