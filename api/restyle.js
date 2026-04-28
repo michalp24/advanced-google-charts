@@ -118,22 +118,53 @@ export default async function handler(req, res) {
       .map((s, i) => readDataUrl(s?.dataUrl, s?.name, i + 1))
       .filter(Boolean);
 
-    const openai = new OpenAI({ apiKey });
-    const structure = await extractStructure(openai, diagramDataUrl);
-    const prompt = buildPrompt({ structure, palette: safePalette, customPrompt: String(customPrompt || "") });
+    // Stream keepalive whitespace during the long OpenAI call. Without this, any
+    // intermediary (corporate proxy, VPN gateway, browser idle timeout) tends to
+    // drop the connection after 30-60s of silence — surfacing as "Failed to fetch"
+    // even though our function is still running. JSON allows leading whitespace,
+    // so the final body remains parseable.
+    res.status(200);
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    if (typeof res.flushHeaders === "function") res.flushHeaders();
+    res.write(" ");
+    let keepalive = setInterval(() => { try { res.write(" "); } catch {} }, 5000);
+    const stopKeepalive = () => { if (keepalive) { clearInterval(keepalive); keepalive = null; } };
 
-    const result = await openai.images.edit({
-      model: IMAGE_MODEL,
-      image: [sourceFile, ...styleFiles],
-      prompt,
-      size: "1536x1024",
-      quality: "high",
-    });
-    const b64 = result.data?.[0]?.b64_json;
-    if (!b64) return res.status(500).json({ error: "No image returned by image model." });
-    return res.status(200).json({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
+    try {
+      const openai = new OpenAI({ apiKey, timeout: 240 * 1000, maxRetries: 0 });
+      const t0 = Date.now();
+      console.log(`[restyle] start (${sourceFile.size}B source, ${styleFiles.length} refs, ${safePalette.length} colors)`);
+      const structure = await extractStructure(openai, diagramDataUrl);
+      console.log(`[restyle] structure extracted at ${Date.now() - t0}ms`);
+      const prompt = buildPrompt({ structure, palette: safePalette, customPrompt: String(customPrompt || "") });
+      const result = await openai.images.edit({
+        model: IMAGE_MODEL,
+        image: [sourceFile, ...styleFiles],
+        prompt,
+        size: "1536x1024",
+        quality: "high",
+      });
+      console.log(`[restyle] image generated at ${Date.now() - t0}ms`);
+      const b64 = result.data?.[0]?.b64_json;
+      stopKeepalive();
+      if (!b64) {
+        res.end(JSON.stringify({ error: "No image returned by image model." }));
+        return;
+      }
+      res.end(JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure }));
+    } catch (innerErr) {
+      stopKeepalive();
+      console.error("restyle inner error:", innerErr);
+      try { res.end(JSON.stringify({ error: innerErr.message || "Unknown error" })); } catch {}
+    }
   } catch (err) {
-    console.error("restyle error:", err);
-    return res.status(err.status || 500).json({ error: err.message || "Unknown error" });
+    console.error("restyle outer error:", err);
+    if (res.headersSent) {
+      try { res.end(JSON.stringify({ error: err.message || "Unknown error" })); } catch {}
+    } else {
+      res.status(err.status || 500).json({ error: err.message || "Unknown error" });
+    }
   }
 }
