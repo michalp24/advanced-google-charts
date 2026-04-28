@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-export const config = { maxDuration: 60 };
+// Pro plan max for traditional serverless functions. gpt-image-1 generation
+// alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
+export const config = { maxDuration: 300 };
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-4o";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
