@@ -3288,6 +3288,7 @@ updateChartStates();
 
 const STK_LS_REFS    = 'nvidia-graphs-stack-refs-v1';
 const STK_LS_COLORS  = 'nvidia-graphs-stack-colors-v1';
+const STK_LS_TOKEN   = 'nvidia-graphs-stack-token-v1';
 const STK_OUT_W      = 1920;
 const STK_OUT_H      = 1080;
 const STK_MAX_REFS   = 6;
@@ -3404,6 +3405,16 @@ function renderStackColors() {
   });
 }
 
+function stkGetToken({ promptIfMissing = true } = {}) {
+  let t = localStorage.getItem(STK_LS_TOKEN) || '';
+  if (!t && promptIfMissing) {
+    t = (window.prompt('Enter the Stack Diagram passcode:') || '').trim();
+    if (t) localStorage.setItem(STK_LS_TOKEN, t);
+  }
+  return t;
+}
+function stkClearToken() { localStorage.removeItem(STK_LS_TOKEN); }
+
 async function restyleStackDiagram() {
   if (!stkSourceDataUrl) { stkSetStatus('Drop a source diagram first.', 'err'); return; }
   const btn = $$('stk-generate');
@@ -3417,12 +3428,20 @@ async function restyleStackDiagram() {
       palette:        stkGetColors(),
       customPrompt:   $$('stk-prompt').value || '',
     };
+    const headers = { 'Content-Type': 'application/json' };
+    const token = stkGetToken();   // prompts on first use, then cached
+    if (token) headers['X-Stack-Token'] = token;
+
     const r = await fetch('/api/restyle', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body:    JSON.stringify(body),
     });
     const data = await r.json().catch(() => ({}));
+    if (r.status === 401) {
+      stkClearToken();
+      throw new Error('Wrong passcode — cleared. Click Recreate again to re-enter.');
+    }
     if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
     stkResultDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
     $$('stk-result-img').src = stkResultDataUrl;

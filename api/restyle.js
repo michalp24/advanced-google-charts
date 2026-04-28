@@ -86,6 +86,21 @@ export default async function handler(req, res) {
   if (!apiKey) {
     return res.status(500).json({ error: "OPENAI_API_KEY is not set on this Vercel project." });
   }
+  // Optional shared-secret gate. If STACK_API_TOKEN is set on the Vercel project,
+  // every request must carry a matching X-Stack-Token header. If unset, the API
+  // is open (useful for local dev). Use a constant-time comparison to avoid leaking
+  // the token length via timing.
+  const expected = process.env.STACK_API_TOKEN;
+  if (expected) {
+    const provided = req.headers["x-stack-token"] || "";
+    const a = Buffer.from(String(provided));
+    const b = Buffer.from(String(expected));
+    let mismatch = a.length !== b.length ? 1 : 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i++) mismatch |= a[i] ^ b[i];
+    if (mismatch !== 0) {
+      return res.status(401).json({ error: "Invalid or missing passcode." });
+    }
+  }
   try {
     const { diagramDataUrl, diagramName, styleImages = [], palette = [], customPrompt = "" } = req.body || {};
     if (!diagramDataUrl) return res.status(400).json({ error: "Missing diagramDataUrl" });
