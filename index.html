@@ -2017,8 +2017,9 @@
       <div class="chart-bar">
         <span class="chart-bar-title" id="stk-bar-title">Stack Diagram Preview</span>
         <button class="btn btn-outline" onclick="clearStackResult()">↺ Reset</button>
-        <button class="btn btn-outline" id="stk-export-jpg" onclick="exportStackJPG()" disabled>⬇ JPG 1920×1080</button>
-        <button class="btn btn-green"   id="stk-export-svg" onclick="exportStackSVG()" disabled>⬇ SVG 1920×1080</button>
+        <button class="btn btn-outline" id="stk-export-jpg"  onclick="exportStackJPG()"      disabled>⬇ JPG</button>
+        <button class="btn btn-outline" id="stk-export-svg"  onclick="exportStackSVG()"      disabled title="PNG embedded in SVG. Visual fidelity, not editable as vector.">⬇ SVG (visual)</button>
+        <button class="btn btn-green"   id="stk-export-wsvg" onclick="exportStackWireSVG()"  disabled title="Pure vector primitives reconstructed from extracted structure. Editable text and shapes, plain styling.">⬇ SVG (editable)</button>
       </div>
 
       <div class="stk-canvas">
@@ -3296,7 +3297,8 @@ const STK_MAX_BYTES  = 4 * 1024 * 1024;   // 4 MB — comfortably under Vercel f
 
 let stkSourceDataUrl = null;
 let stkSourceName    = null;
-let stkResultDataUrl = null;
+let stkResultDataUrl = null;     // AI-generated PNG, auto-cropped + rescaled to 1920x1080
+let stkResultStructure = null;   // structure JSON returned from /api/restyle (for editable wireframe SVG)
 
 const $$ = id => document.getElementById(id);
 
@@ -3450,14 +3452,21 @@ async function restyleStackDiagram() {
       throw new Error('Wrong passcode — cleared. Click Recreate again to re-enter.');
     }
     if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
-    stkResultDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
+    const rawDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
+    stkResultStructure = data.structure || null;
+    // Auto-crop empty bands and rescale to fill 1920x1080. gpt-image-1 tends
+    // to preserve the source's aspect ratio inside the canvas, leaving
+    // pillarbox/letterbox bars; we fix it here so display + every export
+    // uses the filled-canvas version.
+    stkResultDataUrl = await stkAutoCropFill(rawDataUrl);
     $$('stk-result-img').src = stkResultDataUrl;
     $$('stk-result-wrap').style.display = '';
     $$('stk-empty').style.display = 'none';
-    $$('stk-export-jpg').disabled = false;
-    $$('stk-export-svg').disabled = false;
+    $$('stk-export-jpg').disabled  = false;
+    $$('stk-export-svg').disabled  = false;
+    $$('stk-export-wsvg').disabled = false;
     const took = Math.round((Date.now() - startedAt) / 1000);
-    stkSetStatus(`Done in ${took}s. Export is locked to 1920×1080.`, 'ok');
+    stkSetStatus(`Done in ${took}s. Output cropped to fill 1920×1080.`, 'ok');
   } catch (err) {
     stkSetStatus(err.message || String(err), 'err');
   } finally {
@@ -3468,18 +3477,106 @@ async function restyleStackDiagram() {
 
 function clearStackResult() {
   stkResultDataUrl = null;
+  stkResultStructure = null;
   stkSourceDataUrl = null;
   stkSourceName = null;
   $$('stk-result-img').src = '';
   $$('stk-result-wrap').style.display = 'none';
   $$('stk-empty').style.display = '';
-  $$('stk-export-jpg').disabled = true;
-  $$('stk-export-svg').disabled = true;
+  $$('stk-export-jpg').disabled  = true;
+  $$('stk-export-svg').disabled  = true;
+  $$('stk-export-wsvg').disabled = true;
   $$('stk-source-preview').style.display = 'none';
   $$('stk-source-preview').src = '';
   $$('stk-file').value = '';
   $$('stk-prompt').value = '';
   stkSetStatus('Ready. Drop a stack diagram to begin.');
+}
+
+// Detect uniform-color borders on the AI-rendered image and crop them off,
+// then rescale the content to fill 1920x1080. Sample background color from a
+// corner; treat any pixel within ±tol of that color as "empty".
+async function stkAutoCropFill(dataUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const w0 = img.width, h0 = img.height;
+        const cs = document.createElement('canvas');
+        cs.width = w0; cs.height = h0;
+        const cx = cs.getContext('2d');
+        cx.drawImage(img, 0, 0);
+        const buf = cx.getImageData(0, 0, w0, h0).data;
+
+        // Sample bg from the four corners; majority-vote near-equal corners.
+        const corners = [
+          [0, 0], [w0 - 1, 0], [0, h0 - 1], [w0 - 1, h0 - 1],
+        ].map(([x, y]) => {
+          const i = (y * w0 + x) * 4;
+          return [buf[i], buf[i + 1], buf[i + 2]];
+        });
+        const [bgR, bgG, bgB] = corners[0];
+        const tol = 14;
+        const empty = (r, g, b) =>
+          Math.abs(r - bgR) <= tol && Math.abs(g - bgG) <= tol && Math.abs(b - bgB) <= tol;
+
+        // Scan an entire row/column for any non-empty pixel.
+        const rowHasContent = y => {
+          for (let x = 0; x < w0; x++) {
+            const i = (y * w0 + x) * 4;
+            if (!empty(buf[i], buf[i + 1], buf[i + 2])) return true;
+          }
+          return false;
+        };
+        const colHasContent = x => {
+          for (let y = 0; y < h0; y++) {
+            const i = (y * w0 + x) * 4;
+            if (!empty(buf[i], buf[i + 1], buf[i + 2])) return true;
+          }
+          return false;
+        };
+
+        let top = 0; while (top < h0 && !rowHasContent(top)) top++;
+        let bottom = h0 - 1; while (bottom > top && !rowHasContent(bottom)) bottom--;
+        let left = 0; while (left < w0 && !colHasContent(left)) left++;
+        let right = w0 - 1; while (right > left && !colHasContent(right)) right--;
+
+        // Add a tiny pad so edge content isn't hugged against the border
+        const pad = 8;
+        top    = Math.max(0,      top    - pad);
+        bottom = Math.min(h0 - 1, bottom + pad);
+        left   = Math.max(0,      left   - pad);
+        right  = Math.min(w0 - 1, right  + pad);
+
+        const cw = right - left + 1;
+        const ch = bottom - top  + 1;
+
+        // If the crop barely changes anything, skip and use original.
+        if (cw / w0 > 0.97 && ch / h0 > 0.97) {
+          resolve(dataUrl);
+          return;
+        }
+
+        // Render content scaled to fill 1920x1080 using the same bg color
+        // for any letterbox/pillarbox padding (matches source theme).
+        const out = document.createElement('canvas');
+        out.width = STK_OUT_W; out.height = STK_OUT_H;
+        const ox = out.getContext('2d');
+        ox.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`;
+        ox.fillRect(0, 0, STK_OUT_W, STK_OUT_H);
+        const scale = Math.min(STK_OUT_W / cw, STK_OUT_H / ch);
+        const dw = cw * scale, dh = ch * scale;
+        const dx = (STK_OUT_W - dw) / 2, dy = (STK_OUT_H - dh) / 2;
+        ox.drawImage(img, left, top, cw, ch, dx, dy, dw, dh);
+        resolve(out.toDataURL('image/png'));
+      } catch (e) {
+        console.warn('autoCropFill failed, returning original:', e);
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 function stkImageToCanvas(dataUrl) {
@@ -3516,13 +3613,96 @@ async function exportStackJPG() {
 
 function exportStackSVG() {
   if (!stkResultDataUrl) return;
-  // PNG-backed SVG (gpt-image-1 returns raster). Editable as an image, not as vector primitives.
+  // Visual SVG — embeds the cropped, canvas-filling PNG. Visual fidelity, not
+  // editable as vector primitives (text inside the PNG cannot be edited).
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
   <rect width="100%" height="100%" fill="#ffffff"/>
   <image href="${stkResultDataUrl}" x="0" y="0" width="${STK_OUT_W}" height="${STK_OUT_H}" preserveAspectRatio="xMidYMid meet"/>
 </svg>`;
-  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-1920x1080.svg');
+  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-visual-1920x1080.svg');
+}
+
+// Editable vector wireframe — reconstructs from the structure JSON returned
+// by the API (extracted by GPT vision). Boxes/groups become <rect>, text
+// becomes <text>. Plain wireframe styling, but every element is selectable
+// and editable in Illustrator/Figma/Inkscape/etc.
+function exportStackWireSVG() {
+  if (!stkResultStructure) {
+    stkSetStatus('Wireframe SVG needs the structure data — try regenerating.', 'err');
+    return;
+  }
+  const s = stkResultStructure || {};
+  const elements = Array.isArray(s.elements) ? s.elements : [];
+  const colors = stkGetColors();
+  const accent = colors[0] || '#76b900';
+  const bg     = '#ffffff';
+  const ink    = '#111111';
+  const muted  = '#666666';
+  const stroke = '#cccccc';
+
+  const esc = t => String(t || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  // Map normalized 0-100 coords to 1920x1080 with a small inner padding.
+  const PAD = 60;
+  const W = STK_OUT_W - PAD * 2;
+  const H = STK_OUT_H - PAD * 2;
+  const mx = v => PAD + (Math.max(0, Math.min(100, +v || 0)) / 100) * W;
+  const my = v => PAD + (Math.max(0, Math.min(100, +v || 0)) / 100) * H;
+  const mw = v => Math.max(40, (Math.max(0, Math.min(100, +v || 0)) / 100) * W);
+  const mh = v => Math.max(28, (Math.max(0, Math.min(100, +v || 0)) / 100) * H);
+
+  const isContainer = t => ['group', 'box', 'layer', 'bar'].includes(String(t || '').toLowerCase());
+  const isText      = t => ['title', 'subtitle', 'label', 'note'].includes(String(t || '').toLowerCase());
+
+  const parts = [];
+  parts.push(`<rect width="100%" height="100%" fill="${bg}"/>`);
+
+  // Title at top if present
+  const title = s.title || '';
+  const subtitle = s.subtitle || '';
+  let topOffset = PAD;
+  if (title) {
+    parts.push(`<text x="${STK_OUT_W / 2}" y="${topOffset + 60}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="56" fill="${ink}">${esc(title)}</text>`);
+    topOffset += 80;
+  }
+  if (subtitle) {
+    parts.push(`<text x="${STK_OUT_W / 2}" y="${topOffset + 36}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="500" font-size="22" fill="${muted}">${esc(subtitle)}</text>`);
+  }
+
+  // Containers first (back layer), then text (front).
+  const containers = elements.filter(e => isContainer(e?.type));
+  const texts      = elements.filter(e => isText(e?.type));
+  // Anything with text and no clear type — render as label.
+  const others     = elements.filter(e => !isContainer(e?.type) && !isText(e?.type) && e?.text);
+
+  containers.forEach((e, i) => {
+    const x = mx(e.x), y = my(e.y), w = mw(e.width), h = mh(e.height);
+    const fill = colors[i % Math.max(1, colors.length)] || '#f4f4f4';
+    parts.push(`<g><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="14" ry="14" fill="${fill}" fill-opacity="0.16" stroke="${fill}" stroke-width="2"/>` +
+      (e.text ? `<text x="${(x + 14).toFixed(1)}" y="${(y + 28).toFixed(1)}" font-family="Inter, sans-serif" font-weight="700" font-size="20" fill="${ink}">${esc(e.text)}</text>` : '') +
+      `</g>`);
+  });
+  texts.forEach(e => {
+    const x = mx(e.x), y = my(e.y);
+    const size = String(e.type).toLowerCase() === 'subtitle' ? 22 : 16;
+    parts.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Inter, sans-serif" font-size="${size}" fill="${ink}">${esc(e.text || '')}</text>`);
+  });
+  others.forEach(e => {
+    const x = mx(e.x), y = my(e.y);
+    parts.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Inter, sans-serif" font-size="14" fill="${muted}">${esc(e.text)}</text>`);
+  });
+
+  // Footer note showing accent color so user can quickly identify their brand
+  parts.push(`<rect x="${PAD}" y="${STK_OUT_H - 20}" width="120" height="6" rx="3" fill="${accent}"/>`);
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
+${parts.join('\n')}
+</svg>`;
+  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-editable-1920x1080.svg');
 }
 
 /* Drag-and-drop on the source drop zone */
