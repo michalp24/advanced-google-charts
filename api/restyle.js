@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-// Pro plan default with Fluid Compute. gpt-image-1 alone is 30-90s plus the
-// vision call for structure extraction, so we want plenty of headroom.
-export const config = { maxDuration: 300 };
+// Fluid Compute on Pro allows up to 800s. We hit 300s with prior runs, so
+// give ourselves the full headroom. Active CPU pricing means we only pay for
+// time the function is actually computing — idle await on OpenAI is cheap.
+export const config = { maxDuration: 800 };
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
@@ -142,24 +143,25 @@ export default async function handler(request) {
       }, 2500);
 
       const t0 = Date.now();
+      const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
       try {
-        const openai = new OpenAI({ apiKey, timeout: 240 * 1000, maxRetries: 0 });
-        console.log(`[restyle] start (${sourceFile.size}B source, ${styleFiles.length} refs, ${safePalette.length} colors)`);
+        const openai = new OpenAI({ apiKey, timeout: 600 * 1000, maxRetries: 0 });
+        console.log(`[restyle] start  model=${TEXT_MODEL}  src=${sourceFile.size}B  refs=${styleFiles.length}  colors=${safePalette.length}`);
 
+        console.log(`[restyle] structure-call:start (${elapsed()})`);
         const structure = await extractStructure(openai, diagramDataUrl);
-        console.log(`[restyle] structure extracted at ${Date.now() - t0}ms`);
+        console.log(`[restyle] structure-call:end (${elapsed()})  elements=${(structure?.elements || []).length}`);
 
         const prompt = buildPrompt({ structure, palette: safePalette, customPrompt: String(customPrompt || "") });
+        console.log(`[restyle] image-call:start (${elapsed()})  promptLen=${prompt.length}`);
         const result = await openai.images.edit({
           model: IMAGE_MODEL,
           image: [sourceFile, ...styleFiles],
           prompt,
           size: "1536x1024",
-          // "medium" cuts response size ~3-4x vs "high" and finishes faster.
-          // Visual quality is still strong for presentation use.
           quality: "medium",
         });
-        console.log(`[restyle] image generated at ${Date.now() - t0}ms`);
+        console.log(`[restyle] image-call:end (${elapsed()})`);
 
         clearInterval(keepalive);
         const b64 = result.data?.[0]?.b64_json;
@@ -169,9 +171,10 @@ export default async function handler(request) {
           return;
         }
         const payload = JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
-        console.log(`[restyle] response size: ${(payload.length / 1024 / 1024).toFixed(2)} MB`);
+        console.log(`[restyle] write:start (${elapsed()})  size=${(payload.length / 1024 / 1024).toFixed(2)}MB`);
         controller.enqueue(encoder.encode(payload));
         controller.close();
+        console.log(`[restyle] write:end (${elapsed()})`);
       } catch (err) {
         clearInterval(keepalive);
         console.error("restyle error:", err);
