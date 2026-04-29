@@ -26,6 +26,50 @@ function parseJsonFromText(text) {
   try { return JSON.parse(m[0]); } catch { return {}; }
 }
 
+// Strip ```svg fences / commentary and return just the <svg>...</svg> body.
+function extractSvgMarkup(text) {
+  if (!text) return null;
+  let s = String(text).replace(/^```(?:svg|xml)?\s*/im, "").replace(/```\s*$/m, "").trim();
+  const m = s.match(/<svg[\s\S]*<\/svg>/i);
+  return m ? m[0] : null;
+}
+
+// Third AI call: regenerate the diagram as fully-editable SVG markup using
+// the rendered PNG as a visual reference. Boxes become <rect>, labels become
+// <text>, etc — every element is selectable in Illustrator/Figma.
+async function generateEditableSvg(openai, base64Png, structure, palette) {
+  const colorList = palette.length ? palette.join(", ") : "modern enterprise colors";
+  const response = await openai.chat.completions.create({
+    model: TEXT_MODEL,
+    max_tokens: 16000,
+    messages: [
+      { role: "system", content: "You produce beautiful, fully-editable SVG renditions of stack/architecture diagrams. You output ONLY the <svg>...</svg> markup, nothing else. No code fences, no commentary, no prose." },
+      { role: "user", content: [
+        { type: "text", text: `Recreate the stack diagram from the reference image as a polished, fully-editable SVG that visually matches the reference as closely as possible.
+
+Strict requirements:
+- Root element: <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+- Use vector primitives only: <rect>, <text>, <g>, <defs>, <linearGradient>, <filter>, etc. NEVER include <image> or embed any raster/base64 PNG.
+- Generous padding: keep content roughly within x=150..1770, y=85..995 (about 8% margin on each side).
+- Match the reference's color scheme, hierarchy, layout direction, and overall styling. Use linearGradients and drop-shadow filters to mimic the polish.
+- Rounded corners on cards/boxes (rx around 14-20).
+- Modern sans-serif typography: font-family="Inter, system-ui, -apple-system, sans-serif". Each label MUST be a <text> element (never converted to paths) so it's editable.
+- Use this brand palette where it improves on the reference: ${colorList}.
+- Preserve every visible text label from the reference exactly — don't paraphrase. If unreadable, omit rather than invent.
+- Match the source's lightness (light-bg in, light-bg out; dark-bg in, dark-bg out).
+
+Structure JSON (textual content and approximate normalized positions, 0-100):
+${JSON.stringify(structure, null, 2)}
+
+Output ONLY the SVG markup, starting with <svg and ending with </svg>. Nothing before, nothing after.` },
+        { type: "image_url", image_url: { url: `data:image/png;base64,${base64Png}` } }
+      ]}
+    ]
+  });
+  const raw = response.choices?.[0]?.message?.content || "";
+  return extractSvgMarkup(raw);
+}
+
 async function extractStructure(openai, dataUrl) {
   const response = await openai.chat.completions.create({
     model: TEXT_MODEL,
@@ -158,12 +202,32 @@ export default async function handler(req, res) {
       console.log(`[restyle] image-call:end (${elapsed()})`);
 
       const b64 = result.data?.[0]?.b64_json;
-      stopKeepalive();
       if (!b64) {
+        stopKeepalive();
         res.end(JSON.stringify({ error: "No image returned by image model." }));
         return;
       }
-      const payload = JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
+
+      // Third call: produce an editable SVG that visually matches the rendered
+      // PNG. Wrapped in its own try so a failure here does NOT block the user
+      // from getting the raster output — they just won't have an editable SVG.
+      let editableSvg = null;
+      try {
+        console.log(`[restyle] svg-call:start (${elapsed()})`);
+        editableSvg = await generateEditableSvg(openai, b64, structure, safePalette);
+        console.log(`[restyle] svg-call:end (${elapsed()})  svgLen=${editableSvg?.length || 0}`);
+      } catch (svgErr) {
+        console.warn(`[restyle] svg-call FAILED at ${elapsed()}:`, svgErr.message);
+      }
+
+      stopKeepalive();
+      const payload = JSON.stringify({
+        ok: true,
+        mimeType: "image/png",
+        imageBase64: b64,
+        structure,
+        editableSvg,
+      });
       console.log(`[restyle] write  size=${(payload.length / 1024 / 1024).toFixed(2)}MB at ${elapsed()}`);
       res.end(payload);
     } catch (innerErr) {

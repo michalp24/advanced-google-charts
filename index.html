@@ -3296,8 +3296,9 @@ const STK_MAX_BYTES  = 4 * 1024 * 1024;   // 4 MB — comfortably under Vercel f
 
 let stkSourceDataUrl = null;
 let stkSourceName    = null;
-let stkResultDataUrl = null;     // AI-generated PNG, auto-cropped + rescaled to 1920x1080
-let stkResultStructure = null;   // structure JSON returned from /api/restyle (for editable wireframe SVG)
+let stkResultDataUrl = null;       // AI-generated PNG, auto-cropped + rescaled to 1920x1080
+let stkResultStructure = null;     // structure JSON returned from /api/restyle
+let stkResultEditableSvg = null;   // gpt-generated SVG markup matching the rendered raster (vector primitives, editable in Illustrator/Figma)
 
 const $$ = id => document.getElementById(id);
 
@@ -3452,7 +3453,8 @@ async function restyleStackDiagram() {
     }
     if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
     const rawDataUrl = `data:${data.mimeType || 'image/png'};base64,${data.imageBase64}`;
-    stkResultStructure = data.structure || null;
+    stkResultStructure   = data.structure || null;
+    stkResultEditableSvg = data.editableSvg || null;
     // Auto-crop empty bands and rescale to fill 1920x1080. gpt-image-1 tends
     // to preserve the source's aspect ratio inside the canvas, leaving
     // pillarbox/letterbox bars; we fix it here so display + every export
@@ -3476,6 +3478,7 @@ async function restyleStackDiagram() {
 function clearStackResult() {
   stkResultDataUrl = null;
   stkResultStructure = null;
+  stkResultEditableSvg = null;
   stkSourceDataUrl = null;
   stkSourceName = null;
   $$('stk-result-img').src = '';
@@ -3614,13 +3617,19 @@ async function exportStackJPG() {
 
 function exportStackSVG() {
   if (!stkResultDataUrl) return;
-  // The displayed image (stkResultDataUrl) is already the cropped + padded
-  // 1920x1080 raster. Embedding it gives an SVG that is byte-for-pixel
-  // identical to what the user sees in the preview, which is what they want.
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+  // Prefer the gpt-generated editable SVG (vector primitives matching the
+  // rendered visual, editable in any vector tool). Fall back to embedding
+  // the raster only if the SVG generation step failed for this run.
+  let svg;
+  if (stkResultEditableSvg) {
+    svg = `<?xml version="1.0" encoding="UTF-8"?>\n${stkResultEditableSvg}`;
+  } else {
+    console.warn('No editable SVG returned for this run — falling back to raster-in-SVG.');
+    svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
   <image href="${stkResultDataUrl}" x="0" y="0" width="${STK_OUT_W}" height="${STK_OUT_H}" preserveAspectRatio="xMidYMid meet"/>
 </svg>`;
+  }
   stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-1920x1080.svg');
 }
 
