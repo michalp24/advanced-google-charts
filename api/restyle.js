@@ -53,23 +53,29 @@ function buildPrompt({ structure, palette, customPrompt }) {
   const colors = palette.length
     ? `Use these colors as the diagram palette: ${palette.join(", ")}.`
     : "Use restrained modern presentation colors.";
-  return `Redesign the source stack/architecture diagram into a premium, high-quality presentation graphic at 16:9 landscape.
+  return `Redesign the source stack/architecture diagram into a premium presentation graphic. Render natively at a wide 16:9 landscape canvas (1536x1024).
+
+Canvas usage — IMPORTANT:
+- This is a fresh 16:9 canvas. Design FOR this aspect ratio. Do NOT preserve the source image's aspect ratio if it is narrower (e.g. 4:3, square, portrait) — instead, widen and re-flow the diagram to use the full canvas width.
+- The leftmost diagram element (column, group, box, or layer) should begin at roughly 4–8% from the left edge (≈60–125px).
+- The rightmost diagram element should reach roughly 92–96% across (≈1410–1475px right edge).
+- Top and bottom: 5–10% breathing room is fine.
+- Stretch column/group/box widths so the stack covers the full available width. Do not letterbox or pillarbox; do not leave wide empty bands.
 
 Composition:
-- Fill the canvas. Stretch boxes and columns to use the full width; keep margins small (a thin breathing room is fine, but no wide empty bands on the left, right, top, or bottom).
-- Keep the same composition, stack direction, groups, hierarchy, and relative layout from the source.
+- Keep the same composition, stack direction, groups, hierarchy, and relative layout from the source — but adjust horizontal proportions so it fills the wider canvas.
 - Apply clean typography, rounded cards, subtle shadows, aligned spacing — modern enterprise product UI styling.
 - ${colors}
 
 Theme:
 - Match the source's lightness. If the source background is light/white, render light. If the source background is dark, render dark. Do not flip the theme.
-- Use any provided reference images for typography weight, card shape, shadow, and spacing cues only — don't copy their background or palette unless they already match the source.
+- Use any provided reference images for typography weight, card shape, shadow, and spacing cues only — don't copy their background color or palette unless they already match the source.
 
 Content rules:
 - Do not add any new text, icons, logos, captions, footnotes, badges, watermarks, or explanatory text.
 - Do not add generic labels like Group 1, Group 2, Section 1, etc.
 - Preserve the source text as closely as possible. If a label is unclear, omit it rather than invent it.
-- Preserve the source boxes, groups, hierarchy, and stack structure.
+- Preserve the source boxes, groups, hierarchy, and stack structure (just re-flowed wider).
 
 Extracted source structure to preserve:
 ${JSON.stringify(structure, null, 2)}
