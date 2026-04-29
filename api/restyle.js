@@ -1,8 +1,8 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-// Pro plan max for traditional serverless functions. gpt-image-1 generation
-// alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
+// Pro plan default with Fluid Compute. gpt-image-1 alone is 30-90s plus the
+// vision call for structure extraction, so we want plenty of headroom.
 export const config = { maxDuration: 300 };
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
@@ -79,97 +79,116 @@ User custom prompt:
 ${customPrompt || "None."}`;
 }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
+// ── Web-standard handler — Request in, Response (with ReadableStream) out ──
+// This is Vercel's recommended pattern for streaming. Headers flush immediately
+// and the keepalive bytes go straight to the wire (no buffering surprises).
+export default async function handler(request) {
+  const json = (status, body) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+
+  if (request.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json; charset=utf-8", "Allow": "POST" },
+    });
   }
+
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "OPENAI_API_KEY is not set on this Vercel project." });
-  }
-  // Optional shared-secret gate. If STACK_API_TOKEN is set on the Vercel project,
-  // every request must carry a matching X-Stack-Token header. If unset, the API
-  // is open (useful for local dev). Use a constant-time comparison to avoid leaking
-  // the token length via timing.
+  if (!apiKey) return json(500, { error: "OPENAI_API_KEY is not set on this Vercel project." });
+
+  // Optional shared-secret gate (constant-time compare)
   const expected = process.env.STACK_API_TOKEN;
   if (expected) {
-    const provided = req.headers["x-stack-token"] || "";
+    const provided = request.headers.get("x-stack-token") || "";
     const a = Buffer.from(String(provided));
     const b = Buffer.from(String(expected));
     let mismatch = a.length !== b.length ? 1 : 0;
     for (let i = 0; i < Math.min(a.length, b.length); i++) mismatch |= a[i] ^ b[i];
-    if (mismatch !== 0) {
-      return res.status(401).json({ error: "Invalid or missing passcode." });
-    }
+    if (mismatch !== 0) return json(401, { error: "Invalid or missing passcode." });
   }
-  try {
-    const { diagramDataUrl, diagramName, styleImages = [], palette = [], customPrompt = "" } = req.body || {};
-    if (!diagramDataUrl) return res.status(400).json({ error: "Missing diagramDataUrl" });
 
-    const sourceFile = readDataUrl(diagramDataUrl, diagramName || "source.png", 0);
-    if (!sourceFile) return res.status(400).json({ error: "diagramDataUrl must be a valid base64 data URL (png/jpeg/webp)." });
+  let body;
+  try { body = await request.json(); }
+  catch { return json(400, { error: "Body must be JSON." }); }
 
-    const safePalette = Array.isArray(palette)
-      ? palette.map(v => String(v).trim()).filter(v => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)).slice(0, 16)
-      : [];
-    const styleFiles = (Array.isArray(styleImages) ? styleImages : [])
-      .slice(0, 6)
-      .map((s, i) => readDataUrl(s?.dataUrl, s?.name, i + 1))
-      .filter(Boolean);
+  const { diagramDataUrl, diagramName, styleImages = [], palette = [], customPrompt = "" } = body || {};
+  if (!diagramDataUrl) return json(400, { error: "Missing diagramDataUrl" });
 
-    // Stream keepalive whitespace during the long OpenAI call. Without this, any
-    // intermediary (corporate proxy, VPN gateway, browser idle timeout) tends to
-    // drop the connection after 30-60s of silence — surfacing as "Failed to fetch"
-    // even though our function is still running. JSON allows leading whitespace,
-    // so the final body remains parseable.
-    res.status(200);
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Accel-Buffering", "no");
-    if (typeof res.flushHeaders === "function") res.flushHeaders();
-    res.write(" ");
-    // 3s interval (was 5s) — corporate proxies often drop connections after
-    // ~30s of effective silence even with keepalive bytes; tighter cadence
-    // is cheap insurance.
-    let keepalive = setInterval(() => { try { res.write(" "); } catch {} }, 3000);
-    const stopKeepalive = () => { if (keepalive) { clearInterval(keepalive); keepalive = null; } };
+  const sourceFile = readDataUrl(diagramDataUrl, diagramName || "source.png", 0);
+  if (!sourceFile) return json(400, { error: "diagramDataUrl must be a valid base64 data URL (png/jpeg/webp)." });
 
-    try {
-      const openai = new OpenAI({ apiKey, timeout: 240 * 1000, maxRetries: 0 });
+  const safePalette = Array.isArray(palette)
+    ? palette.map(v => String(v).trim()).filter(v => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)).slice(0, 16)
+    : [];
+  const styleFiles = (Array.isArray(styleImages) ? styleImages : [])
+    .slice(0, 6)
+    .map((s, i) => readDataUrl(s?.dataUrl, s?.name, i + 1))
+    .filter(Boolean);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      // First byte goes out immediately so the connection is "active" — no
+      // intermediary will see a quiet idle period.
+      controller.enqueue(encoder.encode(" "));
+
+      // 2.5s keepalive cadence. JSON parsers ignore leading/inner whitespace,
+      // so any number of spaces is harmless before the final JSON object.
+      const keepalive = setInterval(() => {
+        try { controller.enqueue(encoder.encode(" ")); } catch {}
+      }, 2500);
+
       const t0 = Date.now();
-      console.log(`[restyle] start (${sourceFile.size}B source, ${styleFiles.length} refs, ${safePalette.length} colors)`);
-      const structure = await extractStructure(openai, diagramDataUrl);
-      console.log(`[restyle] structure extracted at ${Date.now() - t0}ms`);
-      const prompt = buildPrompt({ structure, palette: safePalette, customPrompt: String(customPrompt || "") });
-      const result = await openai.images.edit({
-        model: IMAGE_MODEL,
-        image: [sourceFile, ...styleFiles],
-        prompt,
-        size: "1536x1024",
-        quality: "high",
-      });
-      console.log(`[restyle] image generated at ${Date.now() - t0}ms`);
-      const b64 = result.data?.[0]?.b64_json;
-      stopKeepalive();
-      if (!b64) {
-        res.end(JSON.stringify({ error: "No image returned by image model." }));
-        return;
+      try {
+        const openai = new OpenAI({ apiKey, timeout: 240 * 1000, maxRetries: 0 });
+        console.log(`[restyle] start (${sourceFile.size}B source, ${styleFiles.length} refs, ${safePalette.length} colors)`);
+
+        const structure = await extractStructure(openai, diagramDataUrl);
+        console.log(`[restyle] structure extracted at ${Date.now() - t0}ms`);
+
+        const prompt = buildPrompt({ structure, palette: safePalette, customPrompt: String(customPrompt || "") });
+        const result = await openai.images.edit({
+          model: IMAGE_MODEL,
+          image: [sourceFile, ...styleFiles],
+          prompt,
+          size: "1536x1024",
+          // "medium" cuts response size ~3-4x vs "high" and finishes faster.
+          // Visual quality is still strong for presentation use.
+          quality: "medium",
+        });
+        console.log(`[restyle] image generated at ${Date.now() - t0}ms`);
+
+        clearInterval(keepalive);
+        const b64 = result.data?.[0]?.b64_json;
+        if (!b64) {
+          controller.enqueue(encoder.encode(JSON.stringify({ error: "No image returned by image model." })));
+          controller.close();
+          return;
+        }
+        const payload = JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
+        console.log(`[restyle] response size: ${(payload.length / 1024 / 1024).toFixed(2)} MB`);
+        controller.enqueue(encoder.encode(payload));
+        controller.close();
+      } catch (err) {
+        clearInterval(keepalive);
+        console.error("restyle error:", err);
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify({ error: err.message || "Unknown error" })));
+        } catch {}
+        try { controller.close(); } catch {}
       }
-      const payload = JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
-      console.log(`[restyle] response size: ${(payload.length / 1024 / 1024).toFixed(2)} MB`);
-      res.end(payload);
-    } catch (innerErr) {
-      stopKeepalive();
-      console.error("restyle inner error:", innerErr);
-      try { res.end(JSON.stringify({ error: innerErr.message || "Unknown error" })); } catch {}
-    }
-  } catch (err) {
-    console.error("restyle outer error:", err);
-    if (res.headersSent) {
-      try { res.end(JSON.stringify({ error: err.message || "Unknown error" })); } catch {}
-    } else {
-      res.status(err.status || 500).json({ error: err.message || "Unknown error" });
-    }
-  }
+    },
+  });
+
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "X-Accel-Buffering": "no",
+    },
+  });
 }
