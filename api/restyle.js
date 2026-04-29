@@ -38,51 +38,66 @@ function extractSvgMarkup(text) {
   return m ? m[0] : null;
 }
 
-// Third AI call: regenerate the diagram as fully-editable SVG markup using
-// the rendered PNG as a visual reference. The reference image IS the source
-// of truth — the task is "look at this raster and reproduce it as vector
-// primitives" — so we use whichever model has the strongest vision+SVG
-// capability (configurable via OPENAI_SVG_MODEL).
+// Third AI call: regenerate the diagram as editable SVG matching the rendered
+// raster. Tuned to mirror what users get from ChatGPT for image→SVG tasks:
+// - simple, high-trust prompt (let the model's defaults do the heavy lifting)
+// - detail:"high" on the image so the vision pipeline allocates real tokens
+// - reasoning_effort:"high" to spend thinking budget on layout/colors before
+//   emitting markup. Falls back gracefully on models that don't accept either.
 async function generateEditableSvg(openaiSvg, base64Png, structure, palette) {
-  const colorList = palette.length ? palette.join(", ") : "(no palette specified — match the reference's colors directly)";
-  const response = await openaiSvg.chat.completions.create({
+  const colorHint = palette.length
+    ? `If your palette choices need adjusting, prefer these brand colors: ${palette.join(", ")}.`
+    : "";
+
+  const userText = `Convert this image into a single editable SVG. The rendered SVG must look like the image — same layout, same colors, same shapes, same text in the same positions.
+
+Output requirements:
+- Single <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">…</svg>.
+- Use vector primitives only: <rect>, <text>, <g>, <defs>, <linearGradient>, <filter>, <feDropShadow>, etc.
+- Every visible text label is a real <text> element (font-family="Inter, system-ui, sans-serif"). Never paths, never <image>, never base64 raster data.
+- Reproduce gradients with <linearGradient>, shadows with <filter><feDropShadow/></filter>.
+- Match colors precisely; use exact hex values you observe.
+- Match the source's lightness — don't flip light↔dark.
+- ${colorHint}
+
+Output ONLY the <svg>…</svg> markup. No prose, no fences, no commentary.
+
+Structure cross-reference (text labels + rough normalized 0-100 positions, source of truth is the image itself):
+${JSON.stringify(structure)}`;
+
+  // Some newer models use max_completion_tokens; older ones use max_tokens.
+  // Both are accepted on most modern endpoints; pass max_completion_tokens
+  // (the newer canonical name) and let the SDK route appropriately.
+  const reqBody = {
     model: SVG_MODEL,
-    max_tokens: 16000,
+    max_completion_tokens: 16000,
     messages: [
-      { role: "system", content: "You are an expert SVG illustrator. You receive an image and produce SVG markup that, when rendered, looks like the image. You output ONLY the <svg>...</svg> markup — no prose, no fences, no commentary, no leading/trailing whitespace beyond the SVG itself." },
+      { role: "system", content: "You are an expert SVG illustrator. You convert images into editable SVG markup that visually matches the source image. You output only the <svg>…</svg> markup — no prose, no code fences, no commentary." },
       { role: "user", content: [
-        { type: "text", text: `Reproduce the reference image as fully-editable SVG. The rendered SVG must look like the reference image. The image is the source of truth.
-
-Step 1 — Inspect the reference image:
-- Background color (light/dark/specific color).
-- Every box, panel, layer, group: position (in 1920x1080 pixels), size, fill color, border color, corner radius, shadow.
-- Every text label: exact text content, position, font weight (regular/medium/semibold/bold), color, approximate font size in pixels.
-- Any gradients, glows, dividers, separators, icons.
-
-Step 2 — Output <svg>...</svg> that reproduces it:
-- Root: <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">.
-- Background: a full-canvas <rect> with the matching fill, OR a <linearGradient> in <defs> if the image's bg is a gradient.
-- Containers/boxes: <rect> with rx (rounded corners as visible in the reference), filled with hex colors that match the reference, with optional <filter><feDropShadow/></filter> applied via filter="url(#…)" if the box visibly has a shadow.
-- Gradients (background, fills): <linearGradient> in <defs>, used via fill="url(#…)".
-- Text: every visible label as a <text> element (NEVER paths, NEVER outlined). font-family="Inter, system-ui, -apple-system, sans-serif". font-weight + font-size matching what you see. fill matching the visible color. text-anchor="middle" for centered labels.
-- Strokes/borders: stroke + stroke-width as visible.
-
-Hard rules:
-- Vector primitives only. Do NOT include <image>. Do NOT embed raster data (no base64, no data: URLs).
-- Every visible text label from the reference MUST appear in the SVG as a <text> element — exact text, never paraphrased. If a label is unreadable, omit it rather than invent.
-- Match the reference's lightness (light bg in → light bg out; dark bg in → dark bg out). Do not flip the theme.
-- Don't add elements that aren't in the reference (no extra logos, captions, footnotes, watermarks, generic "Group 1" labels).
-- Use the user's brand palette where it improves over the reference's literal colors: ${colorList}. Otherwise prefer matching the reference precisely.
-- Keep ~8% padding inside the canvas (content within x=150..1770, y=85..995).
-
-Structure JSON for cross-reference (text content + rough normalized 0-100 positions):
-${JSON.stringify(structure, null, 2)}
-
-Output ONLY the <svg>...</svg> markup. Nothing else.` },
-        { type: "image_url", image_url: { url: `data:image/png;base64,${base64Png}` } }
+        { type: "text", text: userText },
+        // detail:"high" makes the vision pipeline spend more tokens analyzing
+        // the image — closer to what ChatGPT does interactively.
+        { type: "image_url", image_url: { url: `data:image/png;base64,${base64Png}`, detail: "high" } }
       ]}
-    ]
-  });
+    ],
+  };
+  // reasoning_effort is supported on gpt-5 family / o-series; harmless extra
+  // field for models that ignore it. Wrap in try so a 400 from a non-reasoning
+  // model doesn't kill the whole call — we retry without it.
+  let response;
+  try {
+    response = await openaiSvg.chat.completions.create({ ...reqBody, reasoning_effort: "high" });
+  } catch (e) {
+    if (/reasoning_effort|max_completion_tokens|unknown parameter|unsupported/i.test(String(e?.message || ""))) {
+      // Fall back: drop reasoning_effort and use legacy max_tokens
+      const legacy = { ...reqBody };
+      delete legacy.max_completion_tokens;
+      legacy.max_tokens = 16000;
+      response = await openaiSvg.chat.completions.create(legacy);
+    } else {
+      throw e;
+    }
+  }
   const raw = response.choices?.[0]?.message?.content || "";
   return extractSvgMarkup(raw);
 }
