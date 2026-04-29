@@ -1,10 +1,9 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-// 800s requires Fluid Compute explicitly enabled on the project; without it
-// the deploy errors during "Deploying outputs". 600s is allowed on Pro by
-// default and gives us 2x headroom over the previous 300s runs.
-export const config = { maxDuration: 600 };
+// 300s is the proven safe ceiling. Increasing it required a Fluid Compute
+// opt-in that wasn't enabled on this project — those deploys errored.
+export const config = { maxDuration: 300 };
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
