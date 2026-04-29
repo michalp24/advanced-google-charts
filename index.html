@@ -2017,9 +2017,8 @@
       <div class="chart-bar">
         <span class="chart-bar-title" id="stk-bar-title">Stack Diagram Preview</span>
         <button class="btn btn-outline" onclick="clearStackResult()">↺ Reset</button>
-        <button class="btn btn-outline" id="stk-export-jpg"  onclick="exportStackJPG()"      disabled>⬇ JPG</button>
-        <button class="btn btn-outline" id="stk-export-svg"  onclick="exportStackSVG()"      disabled title="PNG embedded in SVG. Visual fidelity, not editable as vector.">⬇ SVG (visual)</button>
-        <button class="btn btn-green"   id="stk-export-wsvg" onclick="exportStackWireSVG()"  disabled title="Pure vector primitives reconstructed from extracted structure. Editable text and shapes, plain styling.">⬇ SVG (editable)</button>
+        <button class="btn btn-outline" id="stk-export-jpg" onclick="exportStackJPG()" disabled>⬇ JPG 1920×1080</button>
+        <button class="btn btn-green"   id="stk-export-svg" onclick="exportStackSVG()" disabled>⬇ SVG 1920×1080</button>
       </div>
 
       <div class="stk-canvas">
@@ -3462,11 +3461,10 @@ async function restyleStackDiagram() {
     $$('stk-result-img').src = stkResultDataUrl;
     $$('stk-result-wrap').style.display = '';
     $$('stk-empty').style.display = 'none';
-    $$('stk-export-jpg').disabled  = false;
-    $$('stk-export-svg').disabled  = false;
-    $$('stk-export-wsvg').disabled = false;
+    $$('stk-export-jpg').disabled = false;
+    $$('stk-export-svg').disabled = false;
     const took = Math.round((Date.now() - startedAt) / 1000);
-    stkSetStatus(`Done in ${took}s. Output cropped to fill 1920×1080.`, 'ok');
+    stkSetStatus(`Done in ${took}s. Output cropped and padded to 1920×1080.`, 'ok');
   } catch (err) {
     stkSetStatus(err.message || String(err), 'err');
   } finally {
@@ -3483,9 +3481,8 @@ function clearStackResult() {
   $$('stk-result-img').src = '';
   $$('stk-result-wrap').style.display = 'none';
   $$('stk-empty').style.display = '';
-  $$('stk-export-jpg').disabled  = true;
-  $$('stk-export-svg').disabled  = true;
-  $$('stk-export-wsvg').disabled = true;
+  $$('stk-export-jpg').disabled = true;
+  $$('stk-export-svg').disabled = true;
   $$('stk-source-preview').style.display = 'none';
   $$('stk-source-preview').src = '';
   $$('stk-file').value = '';
@@ -3557,14 +3554,18 @@ async function stkAutoCropFill(dataUrl) {
           return;
         }
 
-        // Render content scaled to fill 1920x1080 using the same bg color
-        // for any letterbox/pillarbox padding (matches source theme).
+        // Render content into 1920x1080 with a generous breathing margin (~8%
+        // per side). Scaling against the inner area, not the full canvas, so
+        // the stack reads as a centered composition with intentional padding.
         const out = document.createElement('canvas');
         out.width = STK_OUT_W; out.height = STK_OUT_H;
         const ox = out.getContext('2d');
         ox.fillStyle = `rgb(${bgR}, ${bgG}, ${bgB})`;
         ox.fillRect(0, 0, STK_OUT_W, STK_OUT_H);
-        const scale = Math.min(STK_OUT_W / cw, STK_OUT_H / ch);
+        const PADDING_FRAC = 0.08; // 8% on each side, 84% of canvas usable
+        const innerW = STK_OUT_W * (1 - PADDING_FRAC * 2);
+        const innerH = STK_OUT_H * (1 - PADDING_FRAC * 2);
+        const scale = Math.min(innerW / cw, innerH / ch);
         const dw = cw * scale, dh = ch * scale;
         const dx = (STK_OUT_W - dw) / 2, dy = (STK_OUT_H - dh) / 2;
         ox.drawImage(img, left, top, cw, ch, dx, dy, dw, dh);
@@ -3613,96 +3614,14 @@ async function exportStackJPG() {
 
 function exportStackSVG() {
   if (!stkResultDataUrl) return;
-  // Visual SVG — embeds the cropped, canvas-filling PNG. Visual fidelity, not
-  // editable as vector primitives (text inside the PNG cannot be edited).
+  // The displayed image (stkResultDataUrl) is already the cropped + padded
+  // 1920x1080 raster. Embedding it gives an SVG that is byte-for-pixel
+  // identical to what the user sees in the preview, which is what they want.
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
-  <rect width="100%" height="100%" fill="#ffffff"/>
   <image href="${stkResultDataUrl}" x="0" y="0" width="${STK_OUT_W}" height="${STK_OUT_H}" preserveAspectRatio="xMidYMid meet"/>
 </svg>`;
-  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-visual-1920x1080.svg');
-}
-
-// Editable vector wireframe — reconstructs from the structure JSON returned
-// by the API (extracted by GPT vision). Boxes/groups become <rect>, text
-// becomes <text>. Plain wireframe styling, but every element is selectable
-// and editable in Illustrator/Figma/Inkscape/etc.
-function exportStackWireSVG() {
-  if (!stkResultStructure) {
-    stkSetStatus('Wireframe SVG needs the structure data — try regenerating.', 'err');
-    return;
-  }
-  const s = stkResultStructure || {};
-  const elements = Array.isArray(s.elements) ? s.elements : [];
-  const colors = stkGetColors();
-  const accent = colors[0] || '#76b900';
-  const bg     = '#ffffff';
-  const ink    = '#111111';
-  const muted  = '#666666';
-  const stroke = '#cccccc';
-
-  const esc = t => String(t || '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-  // Map normalized 0-100 coords to 1920x1080 with a small inner padding.
-  const PAD = 60;
-  const W = STK_OUT_W - PAD * 2;
-  const H = STK_OUT_H - PAD * 2;
-  const mx = v => PAD + (Math.max(0, Math.min(100, +v || 0)) / 100) * W;
-  const my = v => PAD + (Math.max(0, Math.min(100, +v || 0)) / 100) * H;
-  const mw = v => Math.max(40, (Math.max(0, Math.min(100, +v || 0)) / 100) * W);
-  const mh = v => Math.max(28, (Math.max(0, Math.min(100, +v || 0)) / 100) * H);
-
-  const isContainer = t => ['group', 'box', 'layer', 'bar'].includes(String(t || '').toLowerCase());
-  const isText      = t => ['title', 'subtitle', 'label', 'note'].includes(String(t || '').toLowerCase());
-
-  const parts = [];
-  parts.push(`<rect width="100%" height="100%" fill="${bg}"/>`);
-
-  // Title at top if present
-  const title = s.title || '';
-  const subtitle = s.subtitle || '';
-  let topOffset = PAD;
-  if (title) {
-    parts.push(`<text x="${STK_OUT_W / 2}" y="${topOffset + 60}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="800" font-size="56" fill="${ink}">${esc(title)}</text>`);
-    topOffset += 80;
-  }
-  if (subtitle) {
-    parts.push(`<text x="${STK_OUT_W / 2}" y="${topOffset + 36}" text-anchor="middle" font-family="Inter, sans-serif" font-weight="500" font-size="22" fill="${muted}">${esc(subtitle)}</text>`);
-  }
-
-  // Containers first (back layer), then text (front).
-  const containers = elements.filter(e => isContainer(e?.type));
-  const texts      = elements.filter(e => isText(e?.type));
-  // Anything with text and no clear type — render as label.
-  const others     = elements.filter(e => !isContainer(e?.type) && !isText(e?.type) && e?.text);
-
-  containers.forEach((e, i) => {
-    const x = mx(e.x), y = my(e.y), w = mw(e.width), h = mh(e.height);
-    const fill = colors[i % Math.max(1, colors.length)] || '#f4f4f4';
-    parts.push(`<g><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="14" ry="14" fill="${fill}" fill-opacity="0.16" stroke="${fill}" stroke-width="2"/>` +
-      (e.text ? `<text x="${(x + 14).toFixed(1)}" y="${(y + 28).toFixed(1)}" font-family="Inter, sans-serif" font-weight="700" font-size="20" fill="${ink}">${esc(e.text)}</text>` : '') +
-      `</g>`);
-  });
-  texts.forEach(e => {
-    const x = mx(e.x), y = my(e.y);
-    const size = String(e.type).toLowerCase() === 'subtitle' ? 22 : 16;
-    parts.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Inter, sans-serif" font-size="${size}" fill="${ink}">${esc(e.text || '')}</text>`);
-  });
-  others.forEach(e => {
-    const x = mx(e.x), y = my(e.y);
-    parts.push(`<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-family="Inter, sans-serif" font-size="14" fill="${muted}">${esc(e.text)}</text>`);
-  });
-
-  // Footer note showing accent color so user can quickly identify their brand
-  parts.push(`<rect x="${PAD}" y="${STK_OUT_H - 20}" width="120" height="6" rx="3" fill="${accent}"/>`);
-
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${STK_OUT_W}" height="${STK_OUT_H}" viewBox="0 0 ${STK_OUT_W} ${STK_OUT_H}">
-${parts.join('\n')}
-</svg>`;
-  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-editable-1920x1080.svg');
+  stkDownloadBlob(new Blob([svg], { type: 'image/svg+xml' }), 'stack-diagram-1920x1080.svg');
 }
 
 /* Drag-and-drop on the source drop zone */
