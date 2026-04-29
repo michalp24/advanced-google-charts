@@ -6,6 +6,10 @@ import { File } from "node:buffer";
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-4o";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+// SVG generation needs the strongest available vision+text model, since the
+// task is "look at this raster and reproduce it as vector primitives". Falls
+// back through OPENAI_SVG_MODEL → OPENAI_TEXT_MODEL → gpt-5 default.
+const SVG_MODEL   = process.env.OPENAI_SVG_MODEL   || process.env.OPENAI_TEXT_MODEL || "gpt-5";
 
 function extForMime(mime) {
   if (mime === "image/jpeg") return "jpg";
@@ -35,33 +39,46 @@ function extractSvgMarkup(text) {
 }
 
 // Third AI call: regenerate the diagram as fully-editable SVG markup using
-// the rendered PNG as a visual reference. Boxes become <rect>, labels become
-// <text>, etc — every element is selectable in Illustrator/Figma.
-async function generateEditableSvg(openai, base64Png, structure, palette) {
-  const colorList = palette.length ? palette.join(", ") : "modern enterprise colors";
-  const response = await openai.chat.completions.create({
-    model: TEXT_MODEL,
+// the rendered PNG as a visual reference. The reference image IS the source
+// of truth — the task is "look at this raster and reproduce it as vector
+// primitives" — so we use whichever model has the strongest vision+SVG
+// capability (configurable via OPENAI_SVG_MODEL).
+async function generateEditableSvg(openaiSvg, base64Png, structure, palette) {
+  const colorList = palette.length ? palette.join(", ") : "(no palette specified — match the reference's colors directly)";
+  const response = await openaiSvg.chat.completions.create({
+    model: SVG_MODEL,
     max_tokens: 16000,
     messages: [
-      { role: "system", content: "You produce beautiful, fully-editable SVG renditions of stack/architecture diagrams. You output ONLY the <svg>...</svg> markup, nothing else. No code fences, no commentary, no prose." },
+      { role: "system", content: "You are an expert SVG illustrator. You receive an image and produce SVG markup that, when rendered, looks like the image. You output ONLY the <svg>...</svg> markup — no prose, no fences, no commentary, no leading/trailing whitespace beyond the SVG itself." },
       { role: "user", content: [
-        { type: "text", text: `Recreate the stack diagram from the reference image as a polished, fully-editable SVG that visually matches the reference as closely as possible.
+        { type: "text", text: `Reproduce the reference image as fully-editable SVG. The rendered SVG must look like the reference image. The image is the source of truth.
 
-Strict requirements:
-- Root element: <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-- Use vector primitives only: <rect>, <text>, <g>, <defs>, <linearGradient>, <filter>, etc. NEVER include <image> or embed any raster/base64 PNG.
-- Generous padding: keep content roughly within x=150..1770, y=85..995 (about 8% margin on each side).
-- Match the reference's color scheme, hierarchy, layout direction, and overall styling. Use linearGradients and drop-shadow filters to mimic the polish.
-- Rounded corners on cards/boxes (rx around 14-20).
-- Modern sans-serif typography: font-family="Inter, system-ui, -apple-system, sans-serif". Each label MUST be a <text> element (never converted to paths) so it's editable.
-- Use this brand palette where it improves on the reference: ${colorList}.
-- Preserve every visible text label from the reference exactly — don't paraphrase. If unreadable, omit rather than invent.
-- Match the source's lightness (light-bg in, light-bg out; dark-bg in, dark-bg out).
+Step 1 — Inspect the reference image:
+- Background color (light/dark/specific color).
+- Every box, panel, layer, group: position (in 1920x1080 pixels), size, fill color, border color, corner radius, shadow.
+- Every text label: exact text content, position, font weight (regular/medium/semibold/bold), color, approximate font size in pixels.
+- Any gradients, glows, dividers, separators, icons.
 
-Structure JSON (textual content and approximate normalized positions, 0-100):
+Step 2 — Output <svg>...</svg> that reproduces it:
+- Root: <svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">.
+- Background: a full-canvas <rect> with the matching fill, OR a <linearGradient> in <defs> if the image's bg is a gradient.
+- Containers/boxes: <rect> with rx (rounded corners as visible in the reference), filled with hex colors that match the reference, with optional <filter><feDropShadow/></filter> applied via filter="url(#…)" if the box visibly has a shadow.
+- Gradients (background, fills): <linearGradient> in <defs>, used via fill="url(#…)".
+- Text: every visible label as a <text> element (NEVER paths, NEVER outlined). font-family="Inter, system-ui, -apple-system, sans-serif". font-weight + font-size matching what you see. fill matching the visible color. text-anchor="middle" for centered labels.
+- Strokes/borders: stroke + stroke-width as visible.
+
+Hard rules:
+- Vector primitives only. Do NOT include <image>. Do NOT embed raster data (no base64, no data: URLs).
+- Every visible text label from the reference MUST appear in the SVG as a <text> element — exact text, never paraphrased. If a label is unreadable, omit it rather than invent.
+- Match the reference's lightness (light bg in → light bg out; dark bg in → dark bg out). Do not flip the theme.
+- Don't add elements that aren't in the reference (no extra logos, captions, footnotes, watermarks, generic "Group 1" labels).
+- Use the user's brand palette where it improves over the reference's literal colors: ${colorList}. Otherwise prefer matching the reference precisely.
+- Keep ~8% padding inside the canvas (content within x=150..1770, y=85..995).
+
+Structure JSON for cross-reference (text content + rough normalized 0-100 positions):
 ${JSON.stringify(structure, null, 2)}
 
-Output ONLY the SVG markup, starting with <svg and ending with </svg>. Nothing before, nothing after.` },
+Output ONLY the <svg>...</svg> markup. Nothing else.` },
         { type: "image_url", image_url: { url: `data:image/png;base64,${base64Png}` } }
       ]}
     ]
@@ -181,8 +198,11 @@ export default async function handler(req, res) {
     const t0 = Date.now();
     const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
     try {
-      const openai = new OpenAI({ apiKey, timeout: 270 * 1000, maxRetries: 0 });
-      console.log(`[restyle] start  model=${TEXT_MODEL}  src=${sourceFile.size}B  refs=${styleFiles.length}  colors=${safePalette.length}`);
+      const openai    = new OpenAI({ apiKey, timeout: 270 * 1000, maxRetries: 0 });
+      // Separate client with a tighter per-call timeout for the SVG step so a
+      // slow SVG model can't consume the rest of the function budget.
+      const openaiSvg = new OpenAI({ apiKey, timeout: 120 * 1000, maxRetries: 0 });
+      console.log(`[restyle] start  text=${TEXT_MODEL}  svg=${SVG_MODEL}  image=${IMAGE_MODEL}  src=${sourceFile.size}B  refs=${styleFiles.length}  colors=${safePalette.length}`);
 
       console.log(`[restyle] structure-call:start (${elapsed()})`);
       const structure = await extractStructure(openai, diagramDataUrl);
@@ -213,8 +233,8 @@ export default async function handler(req, res) {
       // from getting the raster output — they just won't have an editable SVG.
       let editableSvg = null;
       try {
-        console.log(`[restyle] svg-call:start (${elapsed()})`);
-        editableSvg = await generateEditableSvg(openai, b64, structure, safePalette);
+        console.log(`[restyle] svg-call:start (${elapsed()})  model=${SVG_MODEL}`);
+        editableSvg = await generateEditableSvg(openaiSvg, b64, structure, safePalette);
         console.log(`[restyle] svg-call:end (${elapsed()})  svgLen=${editableSvg?.length || 0}`);
       } catch (svgErr) {
         console.warn(`[restyle] svg-call FAILED at ${elapsed()}:`, svgErr.message);
