@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/restyle.js": {
+      "maxDuration": 800
+    }
+  }
+}

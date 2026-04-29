@@ -1,10 +1,8 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-// 300s is the safe ceiling without Fluid Compute. After enabling Fluid
-// Compute in the project settings (Settings → Functions), this can go up to
-// 800s on Pro.
-export const config = { maxDuration: 300 };
+// maxDuration is set in vercel.json (functions.api/restyle.js.maxDuration: 800).
+// Fluid Compute is enabled on the project.
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
