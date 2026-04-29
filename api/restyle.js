@@ -1,10 +1,10 @@
 import OpenAI from "openai";
 import { File } from "node:buffer";
 
-// Fluid Compute is default-enabled on all Vercel plans as of 2026, allowing
-// up to 800s on Pro. Active CPU pricing means we only pay for actual work,
-// not idle await time during slow OpenAI calls.
-export const config = { maxDuration: 800 };
+// 300s is the safe ceiling without Fluid Compute. After enabling Fluid
+// Compute in the project settings (Settings → Functions), this can go up to
+// 800s on Pro.
+export const config = { maxDuration: 300 };
 
 const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
