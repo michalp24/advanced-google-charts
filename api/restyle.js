@@ -5,10 +5,7 @@ import { File } from "node:buffer";
 // alone can take 30-90s, plus a GPT-4o vision call for structure extraction.
 export const config = { maxDuration: 300 };
 
-// gpt-4o is the safe default for vision + JSON extraction. To try a GPT-5
-// family model, set OPENAI_TEXT_MODEL on the Vercel project (e.g. gpt-5,
-// gpt-5.3) — keeping the env-var override avoids redeploying.
-const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-4o";
+const TEXT_MODEL  = process.env.OPENAI_TEXT_MODEL  || "gpt-5.5";
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
 
 function extForMime(mime) {
@@ -132,7 +129,10 @@ export default async function handler(req, res) {
     res.setHeader("X-Accel-Buffering", "no");
     if (typeof res.flushHeaders === "function") res.flushHeaders();
     res.write(" ");
-    let keepalive = setInterval(() => { try { res.write(" "); } catch {} }, 5000);
+    // 3s interval (was 5s) — corporate proxies often drop connections after
+    // ~30s of effective silence even with keepalive bytes; tighter cadence
+    // is cheap insurance.
+    let keepalive = setInterval(() => { try { res.write(" "); } catch {} }, 3000);
     const stopKeepalive = () => { if (keepalive) { clearInterval(keepalive); keepalive = null; } };
 
     try {
@@ -156,7 +156,9 @@ export default async function handler(req, res) {
         res.end(JSON.stringify({ error: "No image returned by image model." }));
         return;
       }
-      res.end(JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure }));
+      const payload = JSON.stringify({ ok: true, mimeType: "image/png", imageBase64: b64, structure });
+      console.log(`[restyle] response size: ${(payload.length / 1024 / 1024).toFixed(2)} MB`);
+      res.end(payload);
     } catch (innerErr) {
       stopKeepalive();
       console.error("restyle inner error:", innerErr);
